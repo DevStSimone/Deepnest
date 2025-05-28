@@ -275,7 +275,7 @@ Polygon SvgParser::polygonify(const QDomElement& element, double unitConversionF
         // This is not handled in this basic version. Polygonify is for single geometric entities.
     }
     // Other shapes (text, image) ignored for now.
-    } else if (!tagName.isEmpty() && tagName != "defs" && tagName != "title" && tagName != "desc" && tagName != "metadata" && tagName != "style") { 
+    else if (!tagName.isEmpty() && tagName != "defs" && tagName != "title" && tagName != "desc" && tagName != "metadata" && tagName != "style") {
         // Log unhandled known/structural tags if they are not geometry or groups
         qDebug() << "SvgParser::polygonify: Encountered unhandled SVG element tag:" << tagName << "with ID:" << element.attribute("id");
     }

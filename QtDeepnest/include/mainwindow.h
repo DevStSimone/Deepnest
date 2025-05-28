@@ -104,6 +104,7 @@ private:
 
     class NestingContext *m_nestingContext;
 
+    QAction *m_startNestingAction;
 private slots:
     void onImportSvgClicked();
     void onAddRectangleClicked();

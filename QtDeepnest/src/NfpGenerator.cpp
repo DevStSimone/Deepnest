@@ -180,7 +180,6 @@ std::vector<Polygon> NfpGenerator::calculateNFP(const Polygon& polyA, const Poly
     // The convolve_two_polygon_sets function implements the Minkowski sum.
     convolve_two_polygon_sets(minkowski_result_set, boost_poly_A, boost_poly_B_negated);
     
-    std::vector<BoostPolygonWithHoles> minkowski_polys_with_holes;
     minkowski_result_set.get(minkowski_polys_with_holes); // Extract polygons from the set
 
     qDebug() << "NfpGenerator::calculateNFP - Result set size (before conversion):" << minkowski_polys_with_holes.size();

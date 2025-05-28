@@ -142,7 +142,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(partListWidget, &QListWidget::itemChanged, this, &MainWindow::onPartItemChanged);
     
     // Connect NestingContext signals
-    connect(m_nestingContext, &NestingContext::nestsChanged, this, &MainWindow::onNestsUpdated);
+    //connect(m_nestingContext, &NestingContext::nestsChanged, this, &MainWindow::onNestsUpdated);
     connect(m_nestingContext, &NestingContext::newBestNest, this, [this](const NestResult& nest){
         qInfo() << "New best nest reported with fitness:" << nest.fitness;
         statusBar()->showMessage(QString("New best nest: Fitness %1").arg(nest.fitness), 3000);

@@ -248,14 +248,15 @@ void MainWindow::onNestProgressUpdated(double percentage, int individualId) {
 void MainWindow::onNestingProcessFinished() {
     if(m_progressBar) {
         m_progressBar->setValue(100); // Show completion
-        // Optionally hide after a delay or keep it at 100%
-        // QTimer::singleShot(2000, m_progressBar, &QWidget::hide); 
-        // m_progressBar->setVisible(false); // Or just hide immediately
+        // Optionally, hide after a delay or let it stay at 100% until next run
+        // For now, just setting to 100 is fine. User might want to see it's complete.
+        // Consider hiding it if it was only made visible on start:
+        // m_progressBar->setVisible(false); // If it was made visible in onStartNestingClicked
     }
-    statusBar()->showMessage("Nesting process finished.", 5000);
+    statusBar()->showMessage(tr("Nesting process finished."), 5000); // Use tr() for translatable string
     if(m_startNestingAction) m_startNestingAction->setEnabled(true);
     if(m_stopNestingButton) m_stopNestingButton->setEnabled(false);
-    if(configDockWidget) configDockWidget->setEnabled(true); 
+    if(configDockWidget) configDockWidget->setEnabled(true);
 }
 
 
@@ -266,42 +267,57 @@ void MainWindow::switchToNestingViewTab() {
 }
 
 void MainWindow::onNestsUpdated(const QList<NestResult>& nests) {
-    m_currentNests = nests; 
-    updateNestListWidget();
+    m_currentNests = nests;
+    updateNestListWidget(); // This populates the m_nestListWidget
 
-    bool selectionStillValid = false;
+    // Try to maintain selection or select the best/first nest
+    const NestResult* previouslySelected = m_selectedNest; // Capture pointer
     int newSelectionIndex = -1;
 
-    if (m_selectedNest && !m_currentNests.isEmpty()) {
-        for (int i = 0; i < m_currentNests.size(); ++i) {
-            if (std::abs(m_currentNests[i].fitness - m_selectedNest->fitness) < 1e-6 &&
-                m_currentNests[i].sheets.size() == m_selectedNest->sheets.size() &&
-                m_currentNests[i].partsPlacedCount == m_selectedNest->partsPlacedCount) {
-                newSelectionIndex = i;
-                selectionStillValid = true;
-                break;
+    if (!m_currentNests.isEmpty()) {
+        if (previouslySelected) {
+            for (int i = 0; i < m_currentNests.size(); ++i) {
+                // Attempt to find the previously selected nest.
+                // Using fitness and sheet count as a simple heuristic.
+                // A more robust method would involve unique IDs for NestResult if available.
+                if (std::abs(m_currentNests[i].fitness - previouslySelected->fitness) < 1e-6 &&
+                    m_currentNests[i].sheets.size() == previouslySelected->sheets.size() &&
+                    m_currentNests[i].partsPlacedCount == previouslySelected->partsPlacedCount) { // Added partsPlacedCount for better matching
+                    newSelectionIndex = i;
+                    break;
+                }
             }
         }
-    }
 
-    if (selectionStillValid && newSelectionIndex != -1) {
-        m_selectedNest = &m_currentNests[newSelectionIndex];
-        m_nestListWidget->setCurrentRow(newSelectionIndex); 
-    } else if (!m_currentNests.isEmpty()) {
-        m_selectedNest = &m_currentNests.first();
-        m_nestListWidget->setCurrentRow(0);
-        if (m_nestListWidget->currentRow() == 0) { 
-            displayNestResult(*m_selectedNest);
+        if (newSelectionIndex != -1) {
+            m_nestListWidget->setCurrentRow(newSelectionIndex);
+            // m_selectedNest and display will be updated by onNestListSelectionChanged
+        } else {
+            m_nestListWidget->setCurrentRow(0); // Select the first/best nest
+            // m_selectedNest and display will be updated by onNestListSelectionChanged
         }
     } else {
-        m_selectedNest = nullptr;
-        m_nestScene->clear();
+        // No nests available or all nests were removed
+        if(m_nestListWidget) m_nestListWidget->clear(); // Clear the list widget
+        if(m_nestScene) m_nestScene->clear(); // Clear the display scene
+        m_selectedNest = nullptr; // Explicitly set selected nest to null
+        // onNestListSelectionChanged might not be triggered if the list is cleared,
+        // so ensure UI dependent on m_selectedNest is updated here too.
+        if(m_exportNestSvgButton) m_exportNestSvgButton->setEnabled(false);
     }
-    if(m_exportNestSvgButton) m_exportNestSvgButton->setEnabled(m_selectedNest != nullptr);
-    if(!m_currentNests.isEmpty()) switchToNestingViewTab(); // Switch to results tab when nests are updated
+    // m_exportNestSvgButton state will be correctly set by onNestListSelectionChanged if a selection is made.
+    // If no selection (e.g. list is empty), it should be disabled (handled above and in onNestListSelectionChanged).
+
+    if (!m_currentNests.isEmpty() && m_mainDisplayTabs && m_nestingResultsTab) {
+        if(m_mainDisplayTabs->currentWidget() != m_nestingResultsTab) {
+            // Optionally, only switch if it's not already on "Setup" or some other user-focused tab.
+            // For now, always switch to show results.
+            switchToNestingViewTab();
+        }
+    }
 }
 
-void MainWindow::updateNestListWidget() { 
+void MainWindow::updateNestListWidget() {
     if(!m_nestListWidget) return;
     m_nestListWidget->clear();
     for (int i = 0; i < m_currentNests.size(); ++i) {

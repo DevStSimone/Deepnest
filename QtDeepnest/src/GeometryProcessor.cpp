@@ -248,6 +248,102 @@ Polygon GeometryProcessor::simplifyPolygonDeepnest(const Polygon& poly, double c
     return cleanPolygon(final_polygons[0]); 
 }
 
+Point GeometryProcessor::getPolygonBoundsMin(const Polygon& poly) {
+    if (poly.outer.empty()) {
+        // std::cerr << "Warning: getPolygonBoundsMin called with an empty polygon." << std::endl; // Or qWarning if Qt is setup
+        return {0.0, 0.0};
+    }
+
+    double min_x = std::numeric_limits<double>::max();
+    double min_y = std::numeric_limits<double>::max();
+
+    for (const auto& p : poly.outer) {
+        if (p.x < min_x) {
+            min_x = p.x;
+        }
+        if (p.y < min_y) {
+            min_y = p.y;
+        }
+    }
+    return {min_x, min_y};
+}
+
+Polygon GeometryProcessor::rotatePolygon(const Polygon& poly, double degrees) {
+    Polygon rotatedPoly;
+    double radians = degrees * M_PI / 180.0;
+    double cos_rad = std::cos(radians);
+    double sin_rad = std::sin(radians);
+
+    // Rotate outer boundary
+    rotatedPoly.outer.reserve(poly.outer.size());
+    for (const auto& p : poly.outer) {
+        rotatedPoly.outer.push_back({
+            p.x * cos_rad - p.y * sin_rad,
+            p.x * sin_rad + p.y * cos_rad
+        });
+    }
+
+    // Rotate holes
+    rotatedPoly.holes.reserve(poly.holes.size());
+    for (const auto& hole_pts : poly.holes) {
+        std::vector<Point> rotated_hole;
+        rotated_hole.reserve(hole_pts.size());
+        for (const auto& p : hole_pts) {
+            rotated_hole.push_back({
+                p.x * cos_rad - p.y * sin_rad,
+                p.x * sin_rad + p.y * cos_rad
+            });
+        }
+        rotatedPoly.holes.push_back(rotated_hole);
+    }
+
+    return rotatedPoly;
+}
+
+Clipper2Lib::Paths64 GeometryProcessor::minkowskiSum(const Polygon& polyA, const Polygon& polyB, bool isPathClosed) {
+    // isPathClosed is noted, but PolygonToPaths64 and Union typically assume/produce closed paths.
+    // The parameter is kept for signature consistency if it's used elsewhere or for future explicit handling.
+
+    Clipper2Lib::Paths64 pathsA_scaled = PolygonToPaths64(polyA);
+    Clipper2Lib::Paths64 pathsB_scaled = PolygonToPaths64(polyB);
+
+    // Input Validation
+    if (pathsA_scaled.empty()) {
+        return {}; // Return empty Paths64
+    }
+    if (pathsB_scaled.empty() || pathsB_scaled[0].empty()) {
+        // PolyB has no outer path or its outer path is empty
+        return {}; // Return empty Paths64
+    }
+
+    const Clipper2Lib::Path64& outer_path_B_scaled = pathsB_scaled[0];
+    Clipper2Lib::Paths64 all_translated_A_components;
+
+    // Translate A by vertices of B's outer path
+    for (const Clipper2Lib::Point64& p_b : outer_path_B_scaled) {
+        for (const Clipper2Lib::Path64& contour_A : pathsA_scaled) { // Iterates over outer and holes of A
+            if (contour_A.empty()) continue; // Skip empty contours within polyA (e.g. an empty hole definition)
+
+            Clipper2Lib::Path64 translated_contour_A;
+            translated_contour_A.reserve(contour_A.size());
+            for (const Clipper2Lib::Point64& p_a : contour_A) {
+                translated_contour_A.push_back(Clipper2Lib::Point64(p_a.x + p_b.x, p_a.y + p_b.y));
+            }
+            all_translated_A_components.push_back(translated_contour_A);
+        }
+    }
+
+    // Handle empty intermediate result
+    if (all_translated_A_components.empty()) {
+        return {}; // Return empty Paths64
+    }
+
+    // Compute Union
+    Clipper2Lib::Paths64 solution_paths = Clipper2Lib::Union(all_translated_A_components, Clipper2Lib::FillRule::NonZero);
+    
+    return solution_paths;
+}
+
 
 Clipper2Lib::PointInPolygonResult GeometryProcessor::pointInPolygon(const Point& pt, const Polygon& poly) {
     if (poly.outer.empty()) return Clipper2Lib::PointInPolygonResult::IsOutside;

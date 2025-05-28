@@ -7,7 +7,89 @@
     #define M_PI 3.14159265358979323846
 #endif
 
+// Include for BoostMinkowski structures
+#include "boost_minkowski.h" 
+// DataStructures.h is included via GeometryProcessor.h
+// clipper2/clipper.h is included via GeometryProcessor.h
+
 const double GeometryProcessor::CLIPPER_SCALE = 10000000.0;
+
+// --- Static Conversion Utilities for BoostMinkowski Interface ---
+
+BoostMinkowski::PolygonDouble GeometryProcessor::ToPolygonDouble(const Polygon& ourPoly) {
+    BoostMinkowski::PolygonDouble pd;
+    pd.outer.reserve(ourPoly.outer.size());
+    for (const auto& pt : ourPoly.outer) {
+        pd.outer.push_back({pt.x, pt.y});
+    }
+
+    pd.holes.reserve(ourPoly.holes.size());
+    for (const auto& hole_vec : ourPoly.holes) {
+        std::vector<BoostMinkowski::PointDouble> current_hole_pd;
+        current_hole_pd.reserve(hole_vec.size());
+        for (const auto& pt : hole_vec) {
+            current_hole_pd.push_back({pt.x, pt.y});
+        }
+        pd.holes.push_back(current_hole_pd);
+    }
+    return pd;
+}
+
+Clipper2Lib::Paths64 GeometryProcessor::BoostPolygonsToPaths64(
+    const std::vector<boost::polygon::polygon_with_holes_data<int>>& boostPolys,
+    double boost_calc_scale,
+    const BoostMinkowski::PointDouble& b_ref_shift_coords) {
+    
+    Clipper2Lib::Paths64 resultPathsScaled;
+
+    if (boost_calc_scale == 0) { // Avoid division by zero
+        // Optionally, log an error or warning
+        return resultPathsScaled; // Return empty
+    }
+
+    for (const auto& boost_poly : boostPolys) {
+        // Process Outer Boundary
+        Clipper2Lib::Path64 outer_path_clipper;
+        outer_path_clipper.reserve(boost_poly.size()); // boost_poly.size() gives vertex count of outer
+        
+        for (auto it = boost_poly.begin(); it != boost_poly.end(); ++it) {
+            const auto& boost_pt = *it;
+            double x_unscaled = static_cast<double>(boost_pt.x()) / boost_calc_scale;
+            double y_unscaled = static_cast<double>(boost_pt.y()) / boost_calc_scale;
+            double x_shifted = x_unscaled + b_ref_shift_coords.x;
+            double y_shifted = y_unscaled + b_ref_shift_coords.y;
+            long long x_clipper = static_cast<long long>(x_shifted * GeometryProcessor::CLIPPER_SCALE);
+            long long y_clipper = static_cast<long long>(y_shifted * GeometryProcessor::CLIPPER_SCALE);
+            outer_path_clipper.push_back(Clipper2Lib::Point64(x_clipper, y_clipper));
+        }
+        if (!outer_path_clipper.empty()) {
+            resultPathsScaled.push_back(outer_path_clipper);
+        }
+
+        // Process Holes
+        for (auto hole_it = boost_poly.holes_begin(); hole_it != boost_poly.holes_end(); ++hole_it) {
+            const auto& boost_hole_contour = *hole_it;
+            Clipper2Lib::Path64 hole_path_clipper;
+            hole_path_clipper.reserve(boost_hole_contour.size());
+
+            for (auto pt_it = boost_hole_contour.begin(); pt_it != boost_hole_contour.end(); ++pt_it) {
+                const auto& boost_hole_pt = *pt_it;
+                double x_unscaled = static_cast<double>(boost_hole_pt.x()) / boost_calc_scale;
+                double y_unscaled = static_cast<double>(boost_hole_pt.y()) / boost_calc_scale;
+                double x_shifted = x_unscaled + b_ref_shift_coords.x;
+                double y_shifted = y_unscaled + b_ref_shift_coords.y;
+                long long x_clipper = static_cast<long long>(x_shifted * GeometryProcessor::CLIPPER_SCALE);
+                long long y_clipper = static_cast<long long>(y_shifted * GeometryProcessor::CLIPPER_SCALE);
+                hole_path_clipper.push_back(Clipper2Lib::Point64(x_clipper, y_clipper));
+            }
+            if (!hole_path_clipper.empty()) {
+                resultPathsScaled.push_back(hole_path_clipper);
+            }
+        }
+    }
+    return resultPathsScaled;
+}
+
 
 // --- Coordinate Conversion Helpers ---
 Clipper2Lib::Path64 GeometryProcessor::PointsToPath64(const std::vector<Point>& points) {
@@ -301,47 +383,39 @@ Polygon GeometryProcessor::rotatePolygon(const Polygon& poly, double degrees) {
 }
 
 Clipper2Lib::Paths64 GeometryProcessor::minkowskiSum(const Polygon& polyA, const Polygon& polyB, bool isPathClosed) {
-    // isPathClosed is noted, but PolygonToPaths64 and Union typically assume/produce closed paths.
-    // The parameter is kept for signature consistency if it's used elsewhere or for future explicit handling.
+    // isPathClosed is not directly used in this Boost.Polygon based NFP calculation flow.
+    // Path closure is inherent in the Polygon, Boost.Polygon, and Clipper2 models.
+    (void)isPathClosed; // Mark as unused to prevent compiler warnings.
 
-    Clipper2Lib::Paths64 pathsA_scaled = PolygonToPaths64(polyA);
-    Clipper2Lib::Paths64 pathsB_scaled = PolygonToPaths64(polyB);
+    // 1. Convert polyA and polyB to BoostMinkowski::PolygonDouble
+    BoostMinkowski::PolygonDouble polyA_double = ToPolygonDouble(polyA);
+    BoostMinkowski::PolygonDouble polyB_double = ToPolygonDouble(polyB);
 
-    // Input Validation
-    if (pathsA_scaled.empty()) {
-        return {}; // Return empty Paths64
-    }
-    if (pathsB_scaled.empty() || pathsB_scaled[0].empty()) {
-        // PolyB has no outer path or its outer path is empty
-        return {}; // Return empty Paths64
-    }
+    // 2. Declare variables for calculateMinkowskiSumRaw outputs
+    double calculated_scale = 0.0;
+    BoostMinkowski::PointDouble b_ref_original_coords = {0.0, 0.0};
 
-    const Clipper2Lib::Path64& outer_path_B_scaled = pathsB_scaled[0];
-    Clipper2Lib::Paths64 all_translated_A_components;
+    // 3. Call the refactored Minkowski sum function (NFP calculation: A + (-B))
+    std::vector<boost::polygon::polygon_with_holes_data<int>> boost_result_polys =
+        BoostMinkowski::calculateMinkowskiSumRaw(
+            polyA_double,
+            polyB_double,
+            calculated_scale,
+            b_ref_original_coords
+        );
 
-    // Translate A by vertices of B's outer path
-    for (const Clipper2Lib::Point64& p_b : outer_path_B_scaled) {
-        for (const Clipper2Lib::Path64& contour_A : pathsA_scaled) { // Iterates over outer and holes of A
-            if (contour_A.empty()) continue; // Skip empty contours within polyA (e.g. an empty hole definition)
-
-            Clipper2Lib::Path64 translated_contour_A;
-            translated_contour_A.reserve(contour_A.size());
-            for (const Clipper2Lib::Point64& p_a : contour_A) {
-                translated_contour_A.push_back(Clipper2Lib::Point64(p_a.x + p_b.x, p_a.y + p_b.y));
-            }
-            all_translated_A_components.push_back(translated_contour_A);
-        }
-    }
-
-    // Handle empty intermediate result
-    if (all_translated_A_components.empty()) {
-        return {}; // Return empty Paths64
-    }
-
-    // Compute Union
-    Clipper2Lib::Paths64 solution_paths = Clipper2Lib::Union(all_translated_A_components, Clipper2Lib::FillRule::NonZero);
+    // 4. Convert the Boost.Polygon result to Clipper2Lib::Paths64
+    // The b_ref_original_coords is used to shift the result back, as NFP is A-B relative to origin of A.
+    // The calculateMinkowskiSumRaw negates B and captures B's original reference point.
+    // The result from Boost is A + (-B_shifted_to_origin), so we need to shift it by B's original reference point.
+    Clipper2Lib::Paths64 final_clipper_paths = BoostPolygonsToPaths64(
+        boost_result_polys,
+        calculated_scale,
+        b_ref_original_coords // This shift ensures the NFP is positioned correctly relative to A's origin.
+    );
     
-    return solution_paths;
+    // 5. Return the final Clipper2Lib::Paths64
+    return final_clipper_paths;
 }
 
 

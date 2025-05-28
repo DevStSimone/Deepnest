@@ -2,6 +2,8 @@
 #include <algorithm> // For std::max, std::min, std::fabs
 #include <limits>    // For std::numeric_limits
 
+#include <QDebug> // Added for logging
+
 // Bring in Boost.Polygon using directives for convenience
 using namespace boost::polygon::operators;
 
@@ -170,6 +172,21 @@ std::vector<Polygon> NfpGenerator::calculateNFP(const Polygon& polyA, const Poly
     
     std::vector<BoostPolygonWithHoles> minkowski_polys_with_holes;
     minkowski_result_set.get(minkowski_polys_with_holes); // Extract polygons from the set
+
+    qDebug() << "NfpGenerator::calculateNFP - Input A polygons:" << boost_poly_A.size() 
+             << "Input B_negated polygons:" << boost_poly_B_negated.size();
+
+    // Perform Minkowski sum: A + (-B_transformed) which is equivalent to A - B_original
+    // The convolve_two_polygon_sets function implements the Minkowski sum.
+    convolve_two_polygon_sets(minkowski_result_set, boost_poly_A, boost_poly_B_negated);
+    
+    std::vector<BoostPolygonWithHoles> minkowski_polys_with_holes;
+    minkowski_result_set.get(minkowski_polys_with_holes); // Extract polygons from the set
+
+    qDebug() << "NfpGenerator::calculateNFP - Result set size (before conversion):" << minkowski_polys_with_holes.size();
+    if (minkowski_polys_with_holes.empty() && (boost_poly_A.size() > 0 || boost_poly_B_negated.size() > 0)) {
+        qWarning() << "NfpGenerator::calculateNFP - Minkowski sum resulted in empty set of polygons for non-empty inputs.";
+    }
 
     // Convert back to our Polygon struct, applying inverse scale and shifts
     return fromBoostPolygons(minkowski_polys_with_holes, scale, xshift, yshift);

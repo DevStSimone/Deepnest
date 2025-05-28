@@ -12,13 +12,16 @@
 #include <QScrollArea>     
 #include <QFormLayout>     
 #include <QSpinBox>        
-#include <QDoubleSpinBox>  
-#include <QComboBox>       
-#include <QCheckBox>       
+#include <QDoubleSpinBox>
+#include <QComboBox>
+#include <QCheckBox>
 #include <QPushButton>
 #include <QSplitter>
 #include <QTextStream> 
-#include <cmath>       
+#include <QListWidget>
+#include <QRandomGenerator>
+#include <QDebug>
+#include <cmath>
 
 #include "NestingContext.h" 
 #include "GeometryProcessor.h" 
@@ -125,7 +128,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(partListWidget, &QListWidget::itemSelectionChanged, this, &MainWindow::onPartSelectionChanged);
     connect(partListWidget, &QListWidget::itemChanged, this, &MainWindow::onPartItemChanged);
     
-    connect(m_nestingContext, &NestingContext::nestsChanged, this, &MainWindow::onNestsUpdated);
+    //connect(m_nestingContext, &NestingContext::nestsChanged, this, &MainWindow::onNestsUpdated);
     connect(m_nestingContext, &NestingContext::newBestNest, this, [this](const NestResult& nest){
         qInfo() << "New best nest reported with fitness:" << nest.fitness;
     });

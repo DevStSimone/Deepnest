@@ -98,6 +98,7 @@ private:
     QWidget* m_nestingResultsTab;   
     QPushButton* m_exportNestSvgButton; // Added
 
+    class NestingContext *m_nestingContext;
 
 private slots:
     void onImportSvgClicked();

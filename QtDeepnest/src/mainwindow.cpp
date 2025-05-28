@@ -2,6 +2,7 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QTabWidget>
+#include <QThread>
 #include <QLabel> // For placeholder widget
 #include <QMenuBar> // For menu creation
 #include <QFileDialog>

@@ -95,7 +95,7 @@ Polygon GeometryProcessor::cleanPolygon(const Polygon& poly, Clipper2Lib::FillRu
     // For simplicity, let's try to get the first polygon from the tree.
     // A full PolyTreeToPolygons function would be more robust.
     Clipper2Lib::Paths64 solution_paths;
-    Clipper2Lib::PolyTreeToPaths64(solution_tree, solution_paths); // This flattens the tree
+    solution_paths = Clipper2Lib::PolyTreeToPaths64(solution_tree); // This flattens the tree
 
     if (solution_paths.empty()) return {};
 
@@ -158,7 +158,7 @@ std::vector<Polygon> GeometryProcessor::cleanPolygons(const std::vector<Polygon>
     // This is a placeholder for that more complex conversion.
     // For now, we'll use the simpler Paths64ToPolygons which flattens the structure.
     Clipper2Lib::Paths64 solution_paths;
-    Clipper2Lib::PolyTreeToPaths64(solution_tree, solution_paths); // Flattens tree to paths
+    solution_paths = Clipper2Lib::PolyTreeToPaths64(solution_tree); // Flattens tree to paths
     
     return Paths64ToPolygons(solution_paths); // Each path becomes a separate polygon, holes not explicitly reconstructed.
 }
@@ -255,14 +255,14 @@ Clipper2Lib::PointInPolygonResult GeometryProcessor::pointInPolygon(const Point&
     // If outer_path is CW, PointInPath might consider "inside" as "outside" for positive fill rules.
     // For now, assume PointInPath handles it, or that input paths are CCW.
 
-    Clipper2Lib::PointInPolygonResult result = Clipper2Lib::PointInPath(p, outer_path);
+    Clipper2Lib::PointInPolygonResult result = Clipper2Lib::PointInPolygon(p, outer_path);
 
     if (result == Clipper2Lib::PointInPolygonResult::IsInside) { // Only check holes if it's inside the outer boundary
         for (const auto& hole_pts : poly.holes) {
             if (hole_pts.empty()) continue;
             Clipper2Lib::Path64 hole_path = PointsToPath64(hole_pts);
             // Similar orientation consideration for holes (typically CW if outer is CCW).
-            Clipper2Lib::PointInPolygonResult hole_result = Clipper2Lib::PointInPath(p, hole_path);
+            Clipper2Lib::PointInPolygonResult hole_result = Clipper2Lib::PointInPolygon(p, hole_path);
             
             if (hole_result == Clipper2Lib::PointInPolygonResult::IsInside) {
                 return Clipper2Lib::PointInPolygonResult::IsOutside; // Point is inside a hole

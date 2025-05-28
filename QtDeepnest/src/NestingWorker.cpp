@@ -66,7 +66,7 @@ Polygon NestingWorker::getTransformedPartGeometry(int uniquePartListIndex, doubl
 }
 
 // partInstance is already rotated. partRotationStep is the discrete step (0, 1, 2...).
-std::vector<Polygon> NestingWorker::getInnerNfp(const Part& sheet, const Part& partInstance, int partRotationStep, const AppConfig& config) {
+std::vector<Polygon> NestingWorker::getInnerNfp(const Part& sheet, const Part& partInstance, const AppConfig& config, int partRotationStep) {
     NfpKey key;
     key.partAId = sheet.id; 
     key.partBId = partInstance.id; 
@@ -165,8 +165,8 @@ bool NestingWorker::findBestPlacement(const std::vector<Polygon>& nfpPaths, Poin
 
 NestResult NestingWorker::placeParts() {
     NestResult nestResult;
-    nestResult.fitness = 0.0; 
-    double totalSheetUsedAreaApprox = 0; 
+    nestResult.fitness = 0.0;
+    double totalSheetAreaUsedApprox = 0;
     double totalPartsAreaPlacedScaled = 0;
 
     std::vector<Part> remainingPartsToPlace = m_partsToPlaceThisRun; 
@@ -202,10 +202,10 @@ NestResult NestingWorker::placeParts() {
             Point placementPosition = {0,0};
 
             if (tempPlacedPartsOnSheet_instances.empty()) { 
-                finalNfpForPlacement = getInnerNfp(currentSheet, partToPlace_Instance, currentPartRotationStep, m_appConfig);
+                finalNfpForPlacement = getInnerNfp(currentSheet, partToPlace_Instance, m_appConfig, currentPartRotationStep);
             } else {
                 Clipper2Lib::Paths64 sheetNfpForPart_ClipperPaths;
-                std::vector<Polygon> sheetNfpForPart_Polygons = getInnerNfp(currentSheet, partToPlace_Instance, currentPartRotationStep, m_appConfig);
+                std::vector<Polygon> sheetNfpForPart_Polygons = getInnerNfp(currentSheet, partToPlace_Instance, m_appConfig, currentPartRotationStep);
                 for(const auto& p : sheetNfpForPart_Polygons) { 
                     sheetNfpForPart_ClipperPaths.push_back(GeometryProcessor::PointsToPath64(p.outer));
                 }
@@ -265,7 +265,7 @@ NestResult NestingWorker::placeParts() {
             totalSheetAreaUsedApprox += 1.0; 
         }
         double currentProgress = m_partsToPlaceThisRun.empty() ? 100.0 : (static_cast<double>(m_partsToPlaceThisRun.size() - remainingPartsToPlace.size()) / m_partsToPlaceThisRun.size()) * 100.0;
-        emit progressUpdated(currentProgress); 
+        emit progressUpdated(currentProgress, sheetIdx);
 
     } 
 

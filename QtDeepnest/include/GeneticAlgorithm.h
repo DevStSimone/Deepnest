@@ -39,7 +39,7 @@ private:
     const AppConfig& m_appConfig;
     std::mt19937 m_randomEngine; // For random number generation
     int m_currentIndividualIdCounter;
-
+    std::vector<int> m_expandedPartSourceIndices;
     // Helper to get a list of part indices based on quantity
     std::vector<int> expandPartsByQuantity(const QList<Part>& parts);
 };

@@ -6,6 +6,8 @@
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
 #include <QDebug> // For error messages
+#include <QFont> // For error messages
+#include <QDomDocument> // For error messages
 
 // Helper for parsing doubles, robust to locale
 static double toDouble(const QString& str, bool* ok = nullptr) {
@@ -227,7 +229,7 @@ QList<Part> SvgParser::getParts(const QDomElement& rootElement, double unitConve
                     part.id = QString("part_%1").arg(parts.count());
                 }
                 part.geometry = poly;
-                part.sourceFilename = doc.url().toString(); // Or a more direct filename if available
+                part.sourceFilename = "id;";//doc.url().toString(); // Or a more direct filename if available
                 parts.append(part);
             }
         }

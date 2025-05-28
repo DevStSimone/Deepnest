@@ -28,13 +28,12 @@ NestingContext::~NestingContext() {
 }
 
 void NestingContext::prepareAdamParts(const QList<Part>& inputParts) {
-    m_partsInputOriginal = inputParts; // Store original parts
     m_partsToNest.clear(); 
     m_expandedPartIndices.clear();
     m_placeablePartsForGA.clear();
     m_sheetPartsForWorker.clear();
 
-    for (const Part& part_input : m_partsInputOriginal) { 
+    for (const Part& part_input : inputParts) {
         Part processedPart = part_input; 
 
         double offsetDelta = m_currentConfig.spacing * 0.5;
@@ -133,7 +132,6 @@ void NestingContext::resetNesting() {
     delete m_ga;
     m_ga = nullptr;
     m_nests.clear();
-    m_partsInputOriginal.clear();
     m_partsToNest.clear(); 
     m_expandedPartIndices.clear();
     m_placeablePartsForGA.clear();
@@ -176,7 +174,7 @@ void NestingContext::launchNextTask() {
         );
 
         connect(worker, &NestingWorker::resultReady, this, &NestingContext::handleWorkerResult);
-        connect(worker, &NestingWorker::progressUpdated, this, &NestingContext::handleWorkerProgress);
+        connect(worker, &NestingWorker::progressUpdated, this, &NestingContext::nestProgress);
         
         QThreadPool::globalInstance()->start(worker);
     }

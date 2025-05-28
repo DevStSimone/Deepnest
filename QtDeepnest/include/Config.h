@@ -11,7 +11,7 @@ struct AppConfig {
     int rotations = 4;              // Number of part rotations to try
     int populationSize = 10;        // GA population size
     double mutationRate = 10.0;     // GA mutation rate (percentage, e.g., 10 for 10%)
-    // int threads = 4; // Will be handled by QThreadPool or number of QThreads
+    int threads = 4; // Will be handled by QThreadPool or number of QThreads
     QString placementType = "gravity"; // 'gravity', 'box', 'convexhull' (currently only gravity/box seems most relevant from JS analysis)
     bool mergeLines = true;
     double timeRatio = 0.5;         // Optimization ratio for material vs. time (related to merged lines)

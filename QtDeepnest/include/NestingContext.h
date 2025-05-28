@@ -25,13 +25,14 @@ public:
     const QList<NestResult>& getNests() const { return m_nests; }
 
 signals:
-    void nestProgress(double percentage); // Overall progress
+     void nestProgress(double percentage, int individualId); // Overall progress
     void newBestNest(const NestResult& nest); // When a new best solution is found
     void nestingFinished();
 
 public slots:
     void handleWorkerResult(const NestResult& result, int individualId); // Add individualId
     void launchNextTask(); // Slot to be called to dispatch next GA individual
+    void handleWorkerProgress(double percentage, int individualId);
 
 private:
     QList<Part> m_partsToNest; // All unique parts with their quantities (after processing for GA)
@@ -43,6 +44,8 @@ private:
     NfpGenerator m_nfpGenerator; // Added
     QList<NestResult> m_nests; // Stores top N results
 
+    QList<Part> m_placeablePartsForGA;
+    QList<Part> m_sheetPartsForWorker;
     bool m_isNesting;
     int m_threadsLaunched; // Track how many "threads" (tasks) are out
     int m_threadsCompleted; // Track completed tasks for a generation

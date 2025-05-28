@@ -34,18 +34,19 @@ private:
     // Helper to convert a Part (defined by an index in m_allUniqueParts and a rotation from m_individualConfig)
     // to its actual geometry and ID.
     Part getPartInstanceForPlacement(int expandedPartListIndex);
-    Polygon getTransformedPartGeometry(const Part& basePart, double rotationDegrees);
+    Polygon getTransformedPartGeometry(int uniquePartListIndex, double rotationStep);
     
     // NFP calculation logic
     std::vector<Polygon> getInnerNfp(const Part& sheet, const Part& partToPlace, const AppConfig& config, int partToPlaceRotationIndex);
-    std::vector<Polygon> getOuterNfp(const Part& placedPart, const Point& placedPosition, double placedRotationDegrees, 
-                                     const Part& currentPart, double currentPartRotationDegrees, const AppConfig& config);
+    std::vector<Polygon> getOuterNfp(const Part& placedPartInstance, int placedPartRotationStep,
+                                     const Part& currentPartInstance, int currentPartRotationStep,
+                                     const AppConfig& config);
     
     // Part placement logic
     NestResult placeParts();
 
     // Helper to find best placement position (simplified)
-    bool findBestPlacement(const std::vector<Polygon>& nfpPaths, const Polygon& partToPlaceGeometry, Point& outPosition);
+    bool findBestPlacement(const std::vector<Polygon>& nfpPaths, Point& outPosition);
 
 
     // Member variables
@@ -60,8 +61,8 @@ private:
                                     // For now, assume it can be shared or is used carefully.
     
     // Temporary state for placeParts
-    // std::vector<Part> m_partsToPlaceThisRun; // This will be constructed inside placeParts from m_individualConfig
-    // QList<Part> m_availableSheetsThisRun; // This will be a copy from m_sheetPartsList
+    std::vector<Part> m_partsToPlaceThisRun; // This will be constructed inside placeParts from m_individualConfig
+    QList<Part> m_availableSheetsThisRun; // This will be a copy from m_sheetPartsList
 };
 
 #endif // NESTING_WORKER_H

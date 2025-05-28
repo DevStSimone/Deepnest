@@ -273,6 +273,10 @@ Polygon SvgParser::polygonify(const QDomElement& element, double unitConversionF
         // This is not handled in this basic version. Polygonify is for single geometric entities.
     }
     // Other shapes (text, image) ignored for now.
+    } else if (!tagName.isEmpty() && tagName != "defs" && tagName != "title" && tagName != "desc" && tagName != "metadata" && tagName != "style") { 
+        // Log unhandled known/structural tags if they are not geometry or groups
+        qDebug() << "SvgParser::polygonify: Encountered unhandled SVG element tag:" << tagName << "with ID:" << element.attribute("id");
+    }
     
     return poly;
 }
@@ -469,6 +473,7 @@ std::vector<Point> SvgParser::polygonifyPath(const QDomElement& pathElement, con
     // For a simple stub, we can try to handle only M and L if they are absolute.
     // Example: M 10 10 L 20 20 L 10 20 Z
     // This is a placeholder, real path parsing is needed for full SVG support.
+    qWarning() << "SvgParser::polygonifyPath: Path parsing for element ID" << pathElement.attribute("id") << "is a placeholder. Complex path data (curves, arcs) will not be accurately represented.";
 
     // Use qPainterPathToPolygon to convert the (currently placeholder) QPainterPath
     return qPainterPathToPolygon(painterPath, currentTransform, unitConversionFactor).outer;
@@ -478,19 +483,27 @@ std::vector<Point> SvgParser::linearizePathSegment(const QPainterPath::Element& 
     Q_UNUSED(tolerance); // Tolerance would be used for curve linearization
     std::vector<Point> points;
     // This is a very simplified stub. Proper linearization is complex.
+    // This function is not directly called by the simplified polygonifyPath, 
+    // but if it were, logging would be here.
+    // For now, logging for curves is in qPainterPathToPolygon.
     switch (segment.type) {
         case QPainterPath::MoveToElement:
-            // For polygonification, MoveTo often starts a new polygon or subpath.
-            // Here we are just returning points for a single path.
             points.push_back({segment.x, segment.y});
             break;
         case QPainterPath::LineToElement:
-            points.push_back({lastPoint.x(), lastPoint.y()}); // Start of line
-            points.push_back({segment.x, segment.y});       // End of line
+            // Assuming lastPoint is the start of the segment for LineTo
+            points.push_back({segment.x, segment.y}); // Only add the endpoint
             break;
-        // TODO: Handle CurveToElement, CurveToDataElement with linearization (e.g. recursive subdivision)
+        case QPainterPath::CurveToElement:
+            qDebug() << "SvgParser::linearizePathSegment: CurveToElement encountered and simplified to line segment endpoint.";
+            points.push_back({segment.x, segment.y}); // Simplified to endpoint
+            break;
+        case QPainterPath::CurveToDataElement:
+            // These are data points for CurveToElement, not endpoints themselves for a simple polyline.
+            // qCDebug(svgParsing) << "SvgParser::linearizePathSegment: CurveToDataElement encountered.";
+            break;
         default:
-            // Other element types ignored in this stub
+             qDebug() << "SvgParser::linearizePathSegment: Unhandled QPainterPath::Element type:" << segment.type;
             break;
     }
     return points;
@@ -504,10 +517,15 @@ Polygon SvgParser::qPainterPathToPolygon(const QPainterPath& path, const QTransf
     for (int i = 0; i < transformedPath.elementCount(); ++i) {
         const QPainterPath::Element& el = transformedPath.elementAt(i);
         // This simplified conversion just takes the endpoint of any segment.
-        // A full conversion would handle subpaths (MoveTo) as separate polygons or holes,
-        // and linearize curves.
-        if (el.isMoveTo() || el.isLineTo() || el.isCurveTo()) { // CurveTo implies its endpoint
+        if (el.isMoveTo()) {
              poly.outer.push_back({el.x * unitConversionFactor, el.y * unitConversionFactor});
+        } else if (el.isLineTo()) {
+             poly.outer.push_back({el.x * unitConversionFactor, el.y * unitConversionFactor});
+        } else if (el.isCurveTo()) { 
+             qDebug() << "SvgParser::qPainterPathToPolygon: CurveTo element encountered, approximating with endpoint.";
+             poly.outer.push_back({el.x * unitConversionFactor, el.y * unitConversionFactor});
+        } else if (el.type != QPainterPath::CurveToDataElement) { // CurveToData is part of CurveTo, not a separate point for polyline
+            qDebug() << "SvgParser::qPainterPathToPolygon: Unhandled QPainterPath::Element type in path processing:" << el.type;
         }
         // Note: This doesn't correctly handle multiple subpaths or distinguish outer/holes.
         // QPainterPath can have multiple subpaths. Each subpath (starting with MoveTo)

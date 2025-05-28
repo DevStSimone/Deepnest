@@ -23,11 +23,13 @@
 #include <QPushButton>     // Added
 #include <QLabel>          // Added
 #include <QScrollArea>     
-#include <QGraphicsPathItem> // Added
+#include <QGraphicsPathItem> 
+#include <QProgressBar>    
+#include <QPushButton>     // Ensuring it's explicitly mentioned for m_stopNestingButton
 
 #include "SvgParser.h"
 #include "DataStructures.h"
-#include "NestingContext.h" // Added for m_nestingContext signal connection
+#include "NestingContext.h" 
 
 // Forward declaration for Ui::MainWindow if using .ui file
 QT_BEGIN_NAMESPACE
@@ -96,7 +98,9 @@ private:
     const NestResult* m_selectedNest;
     QTabWidget* m_mainDisplayTabs; 
     QWidget* m_nestingResultsTab;   
-    QPushButton* m_exportNestSvgButton; // Added
+    QPushButton* m_exportNestSvgButton; 
+    QProgressBar* m_progressBar;        
+    QPushButton* m_stopNestingButton;   
 
 
 private slots:
@@ -114,7 +118,10 @@ private slots:
     void onNestsUpdated(const QList<NestResult>& nests); 
     void onNestListSelectionChanged(); 
     void onStartNestingClicked(); 
-    void onExportNestSvgClicked(); // Added
+    void onExportNestSvgClicked(); 
+    void onStopNestingClicked();                
+    void onNestProgressUpdated(double percentage, int individualId = -1); 
+    void onNestingProcessFinished();            
 
 private:
     void updatePartList();

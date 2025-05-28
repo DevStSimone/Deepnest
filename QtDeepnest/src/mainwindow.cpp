@@ -22,6 +22,8 @@
 #include <QThread> 
 #include <QTextStream> 
 #include <cmath>       
+#include <QStatusBar>   // For m_progressBar
+// QToolBar is not used in this version, m_stopNestingButton added to layout
 
 #include "NestingContext.h" 
 #include "GeometryProcessor.h" 
@@ -67,7 +69,10 @@ MainWindow::MainWindow(QWidget *parent)
       m_nestScene(nullptr),
       m_mainDisplayTabs(nullptr),
       m_nestingResultsTab(nullptr),
-      m_exportNestSvgButton(nullptr)
+      m_exportNestSvgButton(nullptr),
+      m_progressBar(nullptr),       
+      m_stopNestingButton(nullptr), 
+      m_startNestingAction(nullptr) 
 {
     m_settings = new QSettings(QSettings::IniFormat, QSettings::UserScope, "QtDeepnestOrg", "QtDeepnest", this);
     m_nestingContext = new NestingContext(this); 
@@ -121,23 +126,30 @@ MainWindow::MainWindow(QWidget *parent)
     toolsMenu->addAction(addRectangleAction);
     connect(addRectangleAction, &QAction::triggered, this, &MainWindow::onAddRectangleClicked);
     
-    QAction *startNestingAction = new QAction(tr("&Start Nesting"), this); 
-    toolsMenu->addAction(startNestingAction);
-    connect(startNestingAction, &QAction::triggered, this, &MainWindow::onStartNestingClicked);
+    m_startNestingAction = new QAction(tr("&Start Nesting"), this); 
+    toolsMenu->addAction(m_startNestingAction);
+    connect(m_startNestingAction, &QAction::triggered, this, &MainWindow::onStartNestingClicked);
 
+    // Progress Bar in Status Bar
+    m_progressBar = new QProgressBar(this);
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(0);
+    m_progressBar->setVisible(false);
+    statusBar()->addWidget(m_progressBar);
+
+    // Connect signals
     connect(partListWidget, &QListWidget::itemSelectionChanged, this, &MainWindow::onPartSelectionChanged);
     connect(partListWidget, &QListWidget::itemChanged, this, &MainWindow::onPartItemChanged);
     
+    // Connect NestingContext signals
     connect(m_nestingContext, &NestingContext::nestsChanged, this, &MainWindow::onNestsUpdated);
     connect(m_nestingContext, &NestingContext::newBestNest, this, [this](const NestResult& nest){
         qInfo() << "New best nest reported with fitness:" << nest.fitness;
+        statusBar()->showMessage(QString("New best nest: Fitness %1").arg(nest.fitness), 3000);
     });
-    connect(m_nestingContext, &NestingContext::nestProgress, this, [this](double percentage, int individualId){
-        // Log or update progress bar
-    });
-     connect(m_nestingContext, &NestingContext::nestingFinished, this, [this](){
-        QMessageBox::information(this, "Nesting Finished", "The nesting process has completed.");
-    });
+    // Connect nestProgress signal, adapting if individualId is present
+    connect(m_nestingContext, &NestingContext::nestProgress, this, &MainWindow::onNestProgressUpdated);
+    connect(m_nestingContext, &NestingContext::nestingFinished, this, &MainWindow::onNestingProcessFinished);
 
     setupPartListContextMenu(); 
     setWindowTitle("QtDeepnest");
@@ -158,6 +170,15 @@ void MainWindow::setupNestingUI() {
     connect(m_exportNestSvgButton, &QPushButton::clicked, this, &MainWindow::onExportNestSvgClicked);
     m_exportNestSvgButton->setEnabled(false); 
 
+    m_stopNestingButton = new QPushButton("Stop Nesting", this);
+    m_stopNestingButton->setEnabled(false);
+    connect(m_stopNestingButton, &QPushButton::clicked, this, &MainWindow::onStopNestingClicked);
+
+    QHBoxLayout* buttonLayout = new QHBoxLayout();
+    buttonLayout->addWidget(m_exportNestSvgButton);
+    buttonLayout->addWidget(m_stopNestingButton);
+    buttonLayout->addStretch();
+
     QSplitter *splitter = new QSplitter(Qt::Horizontal); 
     splitter->addWidget(m_nestListWidget);
     splitter->addWidget(nestDisplayView); 
@@ -165,7 +186,7 @@ void MainWindow::setupNestingUI() {
     splitter->setStretchFactor(1, 3); 
 
     mainNestingLayout->addWidget(splitter); 
-    mainNestingLayout->addWidget(m_exportNestSvgButton); 
+    mainNestingLayout->addLayout(buttonLayout); 
 
     m_nestingResultsTab->setLayout(mainNestingLayout); 
     m_mainDisplayTabs->addTab(m_nestingResultsTab, "Nesting Output");
@@ -177,16 +198,8 @@ void MainWindow::onStartNestingClicked() {
         return;
     }
     AppConfig currentConfig; 
-    // Retrieve base scale: SVG units per Inch
     currentConfig.svgImportScale = m_settings->value("Configuration/scaleUnitsPerInch", 72.0).toDouble();
-    
     bool isMM = (m_unitsComboBox->currentText() == "Millimeters");
-    
-    // Spacing, curveTolerance, endpointTolerance are stored in Inches in settings,
-    // but AppConfig expects them in the current UI unit for direct use by NestingContext/Worker.
-    // This is a point of potential confusion: AppConfig fields should ideally be unit-agnostic or clearly defined.
-    // For now, assume AppConfig fields should hold values in the *current display units*.
-    // So, we retrieve the "Inches" value from settings and convert it to current display units for AppConfig.
     
     double spacingInches = m_settings->value("Configuration/spacingInches", 0.0).toDouble();
     currentConfig.spacing = isMM ? spacingInches * INCH_TO_MM : spacingInches;
@@ -205,9 +218,46 @@ void MainWindow::onStartNestingClicked() {
     currentConfig.mergeLines = m_mergeLinesCheckBox->isChecked();
     currentConfig.simplify = m_simplifyCheckBox->isChecked();
     
+    // UI Updates for starting nesting
+    if(m_startNestingAction) m_startNestingAction->setEnabled(false);
+    if(m_stopNestingButton) m_stopNestingButton->setEnabled(true);
+    if(m_progressBar) {
+        m_progressBar->setValue(0);
+        m_progressBar->setVisible(true);
+    }
+    if(configDockWidget) configDockWidget->setEnabled(false); 
+
     m_nestingContext->startNesting(m_importedParts, currentConfig);
     switchToNestingViewTab(); 
 }
+
+void MainWindow::onStopNestingClicked() {
+    m_nestingContext->stopNesting();
+    if(m_stopNestingButton) m_stopNestingButton->setEnabled(false);
+    // onNestingProcessFinished will re-enable Start and config, and hide progress bar
+}
+
+void MainWindow::onNestProgressUpdated(double percentage, int individualId) {
+    Q_UNUSED(individualId); // Not using individualId for the main progress bar
+    if (m_progressBar) {
+        // NestingContext emits progress as 0-100
+        m_progressBar->setValue(static_cast<int>(percentage));
+    }
+}
+
+void MainWindow::onNestingProcessFinished() {
+    if(m_progressBar) {
+        m_progressBar->setValue(100); // Show completion
+        // Optionally hide after a delay or keep it at 100%
+        // QTimer::singleShot(2000, m_progressBar, &QWidget::hide); 
+        // m_progressBar->setVisible(false); // Or just hide immediately
+    }
+    statusBar()->showMessage("Nesting process finished.", 5000);
+    if(m_startNestingAction) m_startNestingAction->setEnabled(true);
+    if(m_stopNestingButton) m_stopNestingButton->setEnabled(false);
+    if(configDockWidget) configDockWidget->setEnabled(true); 
+}
+
 
 void MainWindow::switchToNestingViewTab() {
     if (m_mainDisplayTabs && m_nestingResultsTab) {
@@ -248,9 +298,11 @@ void MainWindow::onNestsUpdated(const QList<NestResult>& nests) {
         m_nestScene->clear();
     }
     if(m_exportNestSvgButton) m_exportNestSvgButton->setEnabled(m_selectedNest != nullptr);
+    if(!m_currentNests.isEmpty()) switchToNestingViewTab(); // Switch to results tab when nests are updated
 }
 
-void MainWindow::updateNestListWidget() {
+void MainWindow::updateNestListWidget() { 
+    if(!m_nestListWidget) return;
     m_nestListWidget->clear();
     for (int i = 0; i < m_currentNests.size(); ++i) {
         const NestResult& nest = m_currentNests[i];
@@ -263,6 +315,7 @@ void MainWindow::updateNestListWidget() {
 }
 
 void MainWindow::onNestListSelectionChanged() {
+    if(!m_nestListWidget) return;
     QList<QListWidgetItem*> selectedItems = m_nestListWidget->selectedItems();
     if (selectedItems.isEmpty()) {
         m_selectedNest = nullptr;
@@ -281,7 +334,7 @@ void MainWindow::onNestListSelectionChanged() {
     if(m_exportNestSvgButton) m_exportNestSvgButton->setEnabled(m_selectedNest != nullptr);
 }
 
-void MainWindow::onExportNestSvgClicked() {
+void MainWindow::onExportNestSvgClicked() { 
     if (!m_selectedNest) {
         QMessageBox::information(this, "Export SVG", "No nest selected to export.");
         return;
@@ -302,6 +355,7 @@ void MainWindow::onExportNestSvgClicked() {
         QPainterPath sheetGeomPath;
         sheetGeomPath.moveTo(sheetPartDef->geometry.outer[0].x, sheetPartDef->geometry.outer[0].y);
         for(size_t k=1; k < sheetPartDef->geometry.outer.size(); ++k) sheetGeomPath.lineTo(sheetPartDef->geometry.outer[k].x, sheetPartDef->geometry.outer[k].y);
+        sheetGeomPath.closeSubpath(); // Ensure closed for bounding rect
         
         QRectF currentSheetRect = sheetGeomPath.boundingRect(); 
         currentSheetRect.translate(current_sheet_x_offset_for_bounds, 0); 
@@ -591,18 +645,9 @@ void MainWindow::applyDefaults() {
     m_unitsComboBox->blockSignals(blocked);
     
     m_settings->setValue("Configuration/scaleUnitsPerInch", 72.0);
-
-    blocked = m_spacingSpinBox->blockSignals(true);
-    // m_spacingSpinBox->setValue(0.0); // Value will be set by updateConfigDisplayUnits
-    m_spacingSpinBox->blockSignals(blocked);
     m_settings->setValue("Configuration/spacingInches", 0.0);
-
-
-    blocked = m_curveToleranceSpinBox->blockSignals(true);
-    // m_curveToleranceSpinBox->setValue(0.01); // Value will be set by updateConfigDisplayUnits
-    m_curveToleranceSpinBox->blockSignals(blocked);
     m_settings->setValue("Configuration/curveToleranceInches", 0.01);
-
+    m_settings->setValue("Configuration/endpointToleranceInches", 0.005);
 
     blocked = m_rotationsSpinBox->blockSignals(true);
     m_rotationsSpinBox->setValue(4);
@@ -632,12 +677,6 @@ void MainWindow::applyDefaults() {
     m_simplifyCheckBox->setChecked(false);
     m_simplifyCheckBox->blockSignals(blocked);
 
-    blocked = m_endpointToleranceSpinBox->blockSignals(true);
-    // m_endpointToleranceSpinBox->setValue(0.005); // Value will be set by updateConfigDisplayUnits
-    m_endpointToleranceSpinBox->blockSignals(blocked);
-    m_settings->setValue("Configuration/endpointToleranceInches", 0.005);
-
-
     updateConfigDisplayUnits(); 
 }
 
@@ -647,10 +686,6 @@ void MainWindow::loadSettings() {
     bool blocked = m_unitsComboBox->blockSignals(true);
     m_unitsComboBox->setCurrentText(m_settings->value("units", "Inches").toString());
     m_unitsComboBox->blockSignals(blocked);
-
-    // Values for unit-dependent spinboxes are implicitly loaded by updateConfigDisplayUnits,
-    // which reads the base "Inches" values from settings.
-    // So, no need to set their values directly here before calling it.
 
     m_rotationsSpinBox->setValue(m_settings->value("rotations", 4).toInt());
     m_threadsSpinBox->setValue(m_settings->value("threads", QThread::idealThreadCount() > 0 ? QThread::idealThreadCount() : 4).toInt());
@@ -675,8 +710,6 @@ void MainWindow::saveSettings() {
         m_settings->setValue("scaleUnitsPerInch", currentScaleDisplay);
     }
 
-    // For other unit-dependent fields, save their current value in Inches
-    // Convert from current display unit back to Inches if necessary
     bool isMillimeters = (m_unitsComboBox->currentText() == "Millimeters");
     m_settings->setValue("spacingInches", isMillimeters ? m_spacingSpinBox->value() / INCH_TO_MM : m_spacingSpinBox->value());
     m_settings->setValue("curveToleranceInches", isMillimeters ? m_curveToleranceSpinBox->value() / INCH_TO_MM : m_curveToleranceSpinBox->value());
@@ -700,23 +733,20 @@ void MainWindow::onSettingChanged() {
 
 void MainWindow::onUnitsChanged(int index) { 
     Q_UNUSED(index);
-    // When units change, the displayed values of unit-dependent settings need to update.
-    // The underlying stored value (e.g., spacingInches) doesn't change yet.
-    // updateConfigDisplayUnits will read the stored "Inches" value and convert it to the new display unit.
     updateConfigDisplayUnits();
-    saveSettings(); // Save the new unit preference itself, and also other settings which might now have different display values
+    saveSettings(); 
 }
 
 void MainWindow::onResetDefaultsClicked() { 
-    applyDefaults(); // This sets QSettings values for defaults and then calls updateConfigDisplayUnits.
-    saveSettings();  // This ensures that even if applyDefaults didn't explicitly save all, they are saved.
+    applyDefaults(); 
+    saveSettings();  
 }
 
 void MainWindow::updateConfigDisplayUnits() { 
     bool isMillimeters = (m_unitsComboBox->currentText() == "Millimeters");
     QString lengthUnitSuffix = isMillimeters ? " mm" : " in"; 
 
-    bool blocked; // To prevent triggering onSettingChanged during programmatic value changes
+    bool blocked; 
 
     blocked = m_scaleSpinBox->blockSignals(true);
     double scaleUnitsPerInch = m_settings->value("Configuration/scaleUnitsPerInch", 72.0).toDouble();
@@ -770,11 +800,8 @@ void MainWindow::onImportSvgClicked() {
         return;
     }
     
-    // Get the "SVG units per inch" scale from settings.
     double scaleUnitsPerInch = m_settings->value("Configuration/scaleUnitsPerInch", 72.0).toDouble();
-    if (scaleUnitsPerInch <= 0) scaleUnitsPerInch = 72.0; // Avoid division by zero or invalid scale
-
-    // The unitConversionFactor for SvgParser will convert SVG coordinates to inches.
+    if (scaleUnitsPerInch <= 0) scaleUnitsPerInch = 72.0; 
     double unitConversionFactorForParser = 1.0 / scaleUnitsPerInch;
     
     QList<Part> newParts = m_svgParser.getParts(rootElement, unitConversionFactorForParser);

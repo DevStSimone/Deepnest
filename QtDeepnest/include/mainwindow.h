@@ -22,10 +22,12 @@
 #include <QCheckBox>       // Added
 #include <QPushButton>     // Added
 #include <QLabel>          // Added
-#include <QScrollArea>     // Added
+#include <QScrollArea>     
+#include <QGraphicsPathItem> // Added
 
 #include "SvgParser.h"
 #include "DataStructures.h"
+#include "NestingContext.h" // Added for m_nestingContext signal connection
 
 // Forward declaration for Ui::MainWindow if using .ui file
 QT_BEGIN_NAMESPACE
@@ -87,6 +89,15 @@ private:
     QLabel* m_endpointToleranceUnitLabel;
     QLabel* m_scaleUnitLabel;
 
+    // Nesting result display members
+    QListWidget* m_nestListWidget;
+    QGraphicsScene* m_nestScene; 
+    QList<NestResult> m_currentNests;
+    const NestResult* m_selectedNest;
+    QTabWidget* m_mainDisplayTabs; 
+    QWidget* m_nestingResultsTab;   
+    QPushButton* m_exportNestSvgButton; // Added
+
 
 private slots:
     void onImportSvgClicked();
@@ -98,6 +109,12 @@ private slots:
     void onSettingChanged(); 
     void onUnitsChanged(int index); 
     void onResetDefaultsClicked();
+
+    // Nesting result slots
+    void onNestsUpdated(const QList<NestResult>& nests); 
+    void onNestListSelectionChanged(); 
+    void onStartNestingClicked(); 
+    void onExportNestSvgClicked(); // Added
 
 private:
     void updatePartList();
@@ -111,5 +128,11 @@ private:
     void saveSettings();
     void applyDefaults(); 
     void updateConfigDisplayUnits();
+
+    // Nesting UI helpers
+    void setupNestingUI(); 
+    void updateNestListWidget();
+    void displayNestResult(const NestResult& nest);
+    void switchToNestingViewTab(); // Helper to switch tab
 };
 #endif // MAINWINDOW_H

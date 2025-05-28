@@ -1,5 +1,11 @@
 #include "GeometryProcessor.h"
-#include <algorithm> // For std::remove_if if needed for filtering empty paths
+#include <algorithm> // For std::remove_if if needed for filtering empty paths, std::min/max (though not directly used in prompt funcs)
+#include <cmath>     // For std::cos, std::sin, M_PI
+#include <limits>    // For std::numeric_limits
+
+#ifndef M_PI // Define M_PI if not defined (e.g. on Windows with MSVC without _USE_MATH_DEFINES)
+    #define M_PI 3.14159265358979323846
+#endif
 
 const double GeometryProcessor::CLIPPER_SCALE = 10000000.0;
 

@@ -46,7 +46,7 @@ void NestingContext::prepareAdamParts(const QList<Part>& inputParts) {
             if (!offsetResult.empty()) {
                 processedPart.geometry = offsetResult[0];
             } else {
-                qWarning() << "Warning: Offsetting part" << part_input.id << "resulted in empty geometry. Using original.";
+                qWarning() << "Warning: Offsetting part" ;//<< part_input.id << "resulted in empty geometry. Using original.";
             }
         }
 

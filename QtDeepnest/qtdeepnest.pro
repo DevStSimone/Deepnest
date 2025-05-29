@@ -19,6 +19,7 @@ SOURCES += \
     src/NfpCache.cpp \
     src/NfpGenerator.cpp \
     src/SvgParser.cpp \
+    src/boost_minkowski.cpp \
     src/main.cpp \
     src/mainwindow.cpp
 
@@ -32,6 +33,7 @@ HEADERS += \
     include/NfpCache.h \
     include/NfpGenerator.h \
     include/SvgParser.h \
+    include/boost_minkowski.h \
     include/mainwindow.h \
     src/Clipper2Lib/include/clipper2/clipper.core.h \
     src/Clipper2Lib/include/clipper2/clipper.engine.h \

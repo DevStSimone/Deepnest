@@ -16,7 +16,7 @@ const double GeometryProcessor::CLIPPER_SCALE = 10000000.0;
 
 // --- Static Conversion Utilities for BoostMinkowski Interface ---
 
-BoostMinkowski::PolygonDouble GeometryProcessor::ToPolygonDouble(const Polygon& ourPoly) {
+BoostMinkowski::PolygonDouble ToPolygonDouble(const Polygon& ourPoly) {
     BoostMinkowski::PolygonDouble pd;
     pd.outer.reserve(ourPoly.outer.size());
     for (const auto& pt : ourPoly.outer) {
@@ -35,7 +35,7 @@ BoostMinkowski::PolygonDouble GeometryProcessor::ToPolygonDouble(const Polygon& 
     return pd;
 }
 
-Clipper2Lib::Paths64 GeometryProcessor::BoostPolygonsToPaths64(
+Clipper2Lib::Paths64 BoostPolygonsToPaths64(
     const std::vector<boost::polygon::polygon_with_holes_data<int>>& boostPolys,
     double boost_calc_scale,
     const BoostMinkowski::PointDouble& b_ref_shift_coords) {
@@ -67,7 +67,7 @@ Clipper2Lib::Paths64 GeometryProcessor::BoostPolygonsToPaths64(
         }
 
         // Process Holes
-        for (auto hole_it = boost_poly.holes_begin(); hole_it != boost_poly.holes_end(); ++hole_it) {
+        for (auto hole_it = boost_poly.begin_holes(); hole_it != boost_poly.end_holes(); ++hole_it) {
             const auto& boost_hole_contour = *hole_it;
             Clipper2Lib::Path64 hole_path_clipper;
             hole_path_clipper.reserve(boost_hole_contour.size());

@@ -15,8 +15,8 @@
 class NestingWorker : public QObject {
     Q_OBJECT
 public:
-    NestingWorker(const QHash<QString, QPair<QPainterPath, int>>& parts,
-                  const QList<QPainterPath>& sheets,
+    NestingWorker(const QHash<QString, QPair<QPainterPath, int>>& rawParts,
+                  const QList<QPainterPath>& rawSheets,
                   const SvgNest::Configuration& config);
     ~NestingWorker();
 
@@ -31,11 +31,20 @@ signals:
 
 private:
     // Dati di input (copie o riferimenti costanti)
-    QHash<QString, QPair<QPainterPath, int>> parts_;
-    QList<QPainterPath> sheets_;
+    QHash<QString, QPair<QPainterPath, int>> partsRaw_; // Renamed from parts_
+    QList<QPainterPath> sheetsRaw_;  // Renamed from sheets_
     SvgNest::Configuration config_;
     bool stopRequested_ = false;
-    
+
+    // Converted internal representations
+    QList<Core::InternalPart> internalParts_;
+    QList<Core::InternalSheet> internalSheets_;
+
+    // Helper for conversion
+    Core::InternalPart convertPathToInternalPart(const QString& id, const QPainterPath& painterPath, double curveTolerance);
+    Core::InternalSheet convertPathToInternalSheet(const QPainterPath& painterPath, double curveTolerance);
+    void preprocessInputs(); // Main preprocessing call
+
     // Qui andrebbe la logica portata da DeepNest:
     // - Strutture dati interne per poligoni (con gestione fori)
     // - Oggetti per Algoritmo Genetico, NFP Generator (con Clipper2), NFP Cache

@@ -1,7 +1,7 @@
 TEMPLATE = lib
 TARGET = DeepNestQt
 QT += core concurrent
-CONFIG += c++11 # Or a later standard if necessary for Clipper2 or other code
+CONFIG += c++17 # Or a later standard if necessary for Clipper2 or other code
 
 # Define the output directory for the library
 DESTDIR = ../lib # Example: put the library in a 'lib' folder outside the project source
@@ -59,7 +59,7 @@ SOURCES += \
 INCLUDEPATH += $$CLIPPER2_SRC_DIR
 
 # For building a shared library (DLL/SO)
-# CONFIG += sharedlib # Or staticlib if you prefer
+CONFIG += staticlib
 
 # If your library is intended to be used by other qmake projects, you might want to create a .pri file.
 # For now, this .pro file will build the library itself.

@@ -12,11 +12,9 @@
 
 namespace Clipper2Lib {
 
-  //----------------------------------------------------------------------------
---
+  //------------------------------------------------------------------------------
   // Miscellaneous methods
-  //----------------------------------------------------------------------------
---
+  //------------------------------------------------------------------------------
 
   inline bool Path1ContainsPath2(const Path64& path1, const Path64& path2)
   {
@@ -125,10 +123,8 @@ namespace Clipper2Lib {
     switch (loc)
     {
     case Location::Left:
-      if (GetSegmentIntersection(p, p2, rectPath[0], rectPath[3], ip)) return tr
-ue;
-      else if ((p.y < rectPath[0].y) && GetSegmentIntersection(p, p2, rectPath[0
-], rectPath[1], ip))
+      if (GetSegmentIntersection(p, p2, rectPath[0], rectPath[3], ip)) return true;
+      else if ((p.y < rectPath[0].y) && GetSegmentIntersection(p, p2, rectPath[0], rectPath[1], ip))
       {
         loc = Location::Top;
         return true;
@@ -141,10 +137,8 @@ ue;
       else return false;
 
     case Location::Top:
-      if (GetSegmentIntersection(p, p2, rectPath[0], rectPath[1], ip)) return tr
-ue;
-      else if ((p.x < rectPath[0].x) && GetSegmentIntersection(p, p2, rectPath[0
-], rectPath[3], ip))
+      if (GetSegmentIntersection(p, p2, rectPath[0], rectPath[1], ip)) return true;
+      else if ((p.x < rectPath[0].x) && GetSegmentIntersection(p, p2, rectPath[0], rectPath[3], ip))
       {
         loc = Location::Left;
         return true;
@@ -157,10 +151,8 @@ ue;
       else return false;
 
     case Location::Right:
-      if (GetSegmentIntersection(p, p2, rectPath[1], rectPath[2], ip)) return tr
-ue;
-      else if ((p.y < rectPath[1].y) && GetSegmentIntersection(p, p2, rectPath[0
-], rectPath[1], ip))
+      if (GetSegmentIntersection(p, p2, rectPath[1], rectPath[2], ip)) return true;
+      else if ((p.y < rectPath[1].y) && GetSegmentIntersection(p, p2, rectPath[0], rectPath[1], ip))
       {
         loc = Location::Top;
         return true;
@@ -173,10 +165,8 @@ ue;
       else return false;
 
     case Location::Bottom:
-      if (GetSegmentIntersection(p, p2, rectPath[2], rectPath[3], ip)) return tr
-ue;
-      else if ((p.x < rectPath[3].x) && GetSegmentIntersection(p, p2, rectPath[0
-], rectPath[3], ip))
+      if (GetSegmentIntersection(p, p2, rectPath[2], rectPath[3], ip)) return true;
+      else if ((p.x < rectPath[3].x) && GetSegmentIntersection(p, p2, rectPath[0], rectPath[3], ip))
       {
         loc = Location::Left;
         return true;
@@ -264,8 +254,7 @@ ue;
     return result;
   }
 
-  inline bool IsHeadingClockwise(const Point64& pt1, const Point64& pt2, int edg
-eIdx)
+  inline bool IsHeadingClockwise(const Point64& pt1, const Point64& pt2, int edgeIdx)
   {
     switch (edgeIdx)
     {
@@ -439,8 +428,7 @@ eIdx)
     int result = 0;
     for (size_t i = 1; i < startlocs.size(); ++i)
     {
-      int d = static_cast<int>(startlocs[i]) - static_cast<int>(startlocs[i - 1]
-);
+      int d = static_cast<int>(startlocs[i]) - static_cast<int>(startlocs[i - 1]);
       switch (d)
       {
         case -1: result -= 1; break;
@@ -529,8 +517,7 @@ eIdx)
         }
         else if (prev != crossing_loc)
         {
-          bool isClockw = IsClockwise(prev, crossing_loc, prev_pt, path[i], rect
-_mp_);
+          bool isClockw = IsClockwise(prev, crossing_loc, prev_pt, path[i], rect_mp_);
           do {
             AddCorner(prev, isClockw);
           } while (prev != crossing_loc);
@@ -922,11 +909,9 @@ _mp_);
     return result;
   }
 
-  //----------------------------------------------------------------------------
---
+  //------------------------------------------------------------------------------
   // RectClipLines64
-  //----------------------------------------------------------------------------
---
+  //------------------------------------------------------------------------------
 
   Paths64 RectClipLines64::Execute(const Paths64& paths)
   {

@@ -15,12 +15,12 @@ TEMPLATE = app
 # For this example, let's assume the library is built in a folder 'lib' alongside 'examples'
 # and the DeepNestQt project root is two levels up from NestingDemo.
 
-DEEPNESTQT_LIB_PATH = ../../../lib # Adjust if DESTDIR in DeepNestQt.pro is different
+DEEPNESTQT_LIB_PATH = C:/kimera/nesting/Deepnest2/DeepNestQt/build/lib #../../build/lib # Adjust if DESTDIR in DeepNestQt.pro is different
 LIBS += -L$$DEEPNESTQT_LIB_PATH -lDeepNestQt
 
 # Include path for DeepNestQt headers
 # This assumes headers are accessible from the 'src' directory of the DeepNestQt project
-DEEPNESTQT_SRC_PATH = ../../src
+DEEPNESTQT_SRC_PATH = ../../src/SvgNest
 INCLUDEPATH += $$DEEPNESTQT_SRC_PATH
 
 # If DeepNestQt is built as a subproject (e.g. using SUBDIRS template), qmake handles dependencies.

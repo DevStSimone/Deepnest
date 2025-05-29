@@ -18,18 +18,15 @@
 #include <emmintrin.h>
 #define fmin(a,b) _mm_cvtsd_f64(_mm_min_sd(_mm_set_sd(a),_mm_set_sd(b)))
 #define fmax(a,b) _mm_cvtsd_f64(_mm_max_sd(_mm_set_sd(a),_mm_set_sd(b)))
-#define nearbyint(a) _mm_cvtsd_si64(_mm_set_sd(a)) /* Note: expression type is (
-int64_t) */
+#define nearbyint(a) _mm_cvtsd_si64(_mm_set_sd(a)) /* Note: expression type is (int64_t) */
 #endif
 
 namespace Clipper2Lib {
 
   static const Rect64 invalid_rect = Rect64(false);
 
-  // Every closed path (ie polygon) is made up of a series of vertices forming e
-dge
-  // 'bounds' that alternate between ascending bounds (containing edges going up
-
+  // Every closed path (ie polygon) is made up of a series of vertices forming edge 
+  // 'bounds' that alternate between ascending bounds (containing edges going up 
   // relative to the Y-axis) and descending bounds. 'Local Minima' refers to
   // vertices where ascending and descending bounds join at the bottom, and
   // 'Local Maxima' are where ascending and descending bounds join at the top.
@@ -110,16 +107,11 @@ dge
     return (!op || op->next == op);
   }
 
-  /*****************************************************************************
-**
-    *  Dx:                             0(90deg)
-   *
-    *                                  |
-   *
-    *               +inf (180deg) <--- o ---> -inf (0deg)
-   *
-    ****************************************************************************
-***/
+  /*******************************************************************************
+    *  Dx:                             0(90deg)                                    *
+    *                                  |                                           *
+    *               +inf (180deg) <--- o ---> -inf (0deg)                          *
+    *******************************************************************************/
 
   inline double GetDx(const Point64& pt1, const Point64& pt2)
   {
@@ -136,12 +128,9 @@ dge
   {
     if ((currentY == ae.top.y) || (ae.top.x == ae.bot.x)) return ae.top.x;
     else if (currentY == ae.bot.y) return ae.bot.x;
-    else return ae.bot.x + static_cast<int64_t>(nearbyint(ae.dx * (currentY - ae
-.bot.y)));
-    // nb: std::nearbyint (or std::round) substantially *improves* performance h
-ere
-    // as it greatly improves the likelihood of edge adjacency in ProcessInterse
-ctList().
+    else return ae.bot.x + static_cast<int64_t>(nearbyint(ae.dx * (currentY - ae.bot.y)));
+    // nb: std::nearbyint (or std::round) substantially *improves* performance here
+    // as it greatly improves the likelihood of edge adjacency in ProcessIntersectList().
   }
 
 
@@ -391,8 +380,7 @@ ctList().
   inline double AreaTriangle(const Point64& pt1,
     const Point64& pt2, const Point64& pt3)
   {
-    return (static_cast<double>(pt3.y + pt1.y) * static_cast<double>(pt3.x - pt1
-.x) +
+    return (static_cast<double>(pt3.y + pt1.y) * static_cast<double>(pt3.x - pt1.x) +
       static_cast<double>(pt1.y + pt2.y) * static_cast<double>(pt1.x - pt2.x) +
       static_cast<double>(pt2.y + pt3.y) * static_cast<double>(pt2.x - pt3.x));
   }
@@ -479,8 +467,7 @@ ctList().
 
   inline bool EdgesAdjacentInAEL(const IntersectNode& inode)
   {
-    return (inode.edge1->next_in_ael == inode.edge2) || (inode.edge1->prev_in_ae
-l == inode.edge2);
+    return (inode.edge1->next_in_ael == inode.edge2) || (inode.edge1->prev_in_ael == inode.edge2);
   }
 
   inline bool IsJoined(const Active& e)
@@ -569,8 +556,7 @@ l == inode.edge2);
     OutPt* op2 = op;
     while (op2->next != op &&
       ((op2->pt.x == op2->next->pt.x && op2->pt.x == op2->prev->pt.x) ||
-        (op2->pt.y == op2->next->pt.y && op2->pt.y == op2->prev->pt.y))) op2 = o
-p2->next;
+        (op2->pt.y == op2->next->pt.y && op2->pt.y == op2->prev->pt.y))) op2 = op2->next;
     result.emplace_back(op2->pt);
     OutPt* prevOp = op2;
     op2 = op2->next;
@@ -589,7 +575,7 @@ p2->next;
 
   inline bool Path2ContainsPath1(OutPt* op1, OutPt* op2)
   {
-    // this function accommodates rounding errors that
+    // this function accommodates rounding errors that 
     // can cause path micro intersections
     PointInPolygonResult pip = PointInPolygonResult::IsOn;
     OutPt* op = op1;
@@ -726,21 +712,17 @@ p2->next;
     vertexLists.emplace_back(vertices);
   }
 
-  //----------------------------------------------------------------------------
---
+  //------------------------------------------------------------------------------
   // ReuseableDataContainer64 methods ...
-  //----------------------------------------------------------------------------
---
+  //------------------------------------------------------------------------------
 
-  void ReuseableDataContainer64::AddLocMin(Vertex& vert, PathType polytype, bool
- is_open)
+  void ReuseableDataContainer64::AddLocMin(Vertex& vert, PathType polytype, bool is_open)
   {
     //make sure the vertex is added only once ...
     if ((VertexFlags::LocalMin & vert.flags) != VertexFlags::Empty) return;
 
     vert.flags = (vert.flags | VertexFlags::LocalMin);
-    minima_list_.emplace_back(std::make_unique <LocalMinima>(&vert, polytype, is
-_open));
+    minima_list_.emplace_back(std::make_unique <LocalMinima>(&vert, polytype, is_open));
   }
 
   void ReuseableDataContainer64::AddPaths(const Paths64& paths,
@@ -761,11 +743,9 @@ _open));
     vertex_lists_.clear();
   }
 
-  //----------------------------------------------------------------------------
---
+  //------------------------------------------------------------------------------
   // ClipperBase methods ...
-  //----------------------------------------------------------------------------
---
+  //------------------------------------------------------------------------------
 
   ClipperBase::~ClipperBase()
   {
@@ -807,8 +787,7 @@ _open));
   {
     if (!minima_list_sorted_)
     {
-      std::stable_sort(minima_list_.begin(), minima_list_.end(), LocMinSorter())
-; //#594
+      std::stable_sort(minima_list_.begin(), minima_list_.end(), LocMinSorter()); //#594
       minima_list_sorted_ = true;
     }
     LocalMinimaList::const_reverse_iterator i;
@@ -854,27 +833,23 @@ _open));
     AddPaths(Paths64(1, path), polytype, is_open);
   }
 
-  void ClipperBase::AddPaths(const Paths64& paths, PathType polytype, bool is_op
-en)
+  void ClipperBase::AddPaths(const Paths64& paths, PathType polytype, bool is_open)
   {
     if (is_open) has_open_paths_ = true;
     minima_list_sorted_ = false;
     AddPaths_(paths, polytype, is_open, vertex_lists_, minima_list_);
   }
 
-  void ClipperBase::AddReuseableData(const ReuseableDataContainer64& reuseable_d
-ata)
+  void ClipperBase::AddReuseableData(const ReuseableDataContainer64& reuseable_data)
   {
     // nb: reuseable_data will continue to own the vertices
     // and remains responsible for their clean up.
     succeeded_ = false;
     minima_list_sorted_ = false;
     LocalMinimaList::const_iterator i;
-    for (i = reuseable_data.minima_list_.cbegin(); i != reuseable_data.minima_li
-st_.cend(); ++i)
+    for (i = reuseable_data.minima_list_.cbegin(); i != reuseable_data.minima_list_.cend(); ++i)
     {
-      minima_list_.emplace_back(std::make_unique <LocalMinima>((*i)->vertex, (*i
-)->polytype, (*i)->is_open));
+      minima_list_.emplace_back(std::make_unique <LocalMinima>((*i)->vertex, (*i)->polytype, (*i)->is_open));
       if ((*i)->is_open) has_open_paths_ = true;
     }
   }
@@ -898,8 +873,7 @@ st_.cend(); ++i)
 
   bool ClipperBase::PopLocalMinima(int64_t y, LocalMinima*& local_minima)
   {
-    if (current_locmin_iter_ == minima_list_.end() || (*current_locmin_iter_)->v
-ertex->pt.y != y) return false;
+    if (current_locmin_iter_ == minima_list_.end() || (*current_locmin_iter_)->vertex->pt.y != y) return false;
     local_minima = (current_locmin_iter_++)->get();
     return true;
   }
@@ -928,8 +902,7 @@ ertex->pt.y != y) return false;
     if ((VertexFlags::LocalMin & vert.flags) != VertexFlags::Empty) return;
 
     vert.flags = (vert.flags | VertexFlags::LocalMin);
-    minima_list_.emplace_back(std::make_unique <LocalMinima>(&vert, polytype, is
-_open));
+    minima_list_.emplace_back(std::make_unique <LocalMinima>(&vert, polytype, is_open));
   }
 
   bool ClipperBase::IsContributingClosed(const Active& e) const
@@ -1043,8 +1016,7 @@ _open));
     //one. Also, open paths have no meaningful wind directions or counts.)
 
     Active* e2 = e.prev_in_ael;
-    //find the nearest closed path edge of the same PolyType in AEL (heading lef
-t)
+    //find the nearest closed path edge of the same PolyType in AEL (heading left)
     PathType pt = GetPolyType(e);
     while (e2 && (GetPolyType(*e2) != pt || IsOpen(*e2))) e2 = e2->prev_in_ael;
 
@@ -1158,13 +1130,11 @@ t)
     //the direction they're about to turn
     if (!IsMaxima(resident) && (resident.top.y > newcomer.top.y))
     {
-      return (CrossProductSign(newcomer.bot, resident.top, NextVertex(resident)-
->pt) <= 0);
+      return (CrossProductSign(newcomer.bot, resident.top, NextVertex(resident)->pt) <= 0);
     }
     else if (!IsMaxima(newcomer) && (newcomer.top.y > resident.top.y))
     {
-      return (CrossProductSign(newcomer.bot, newcomer.top, NextVertex(newcomer)-
->pt) >= 0);
+      return (CrossProductSign(newcomer.bot, newcomer.top, NextVertex(newcomer)->pt) >= 0);
     }
 
     int64_t y = newcomer.bot.y;
@@ -1234,8 +1204,7 @@ t)
 
     while (PopLocalMinima(bot_y, local_minima))
     {
-      if ((local_minima->vertex->flags & VertexFlags::OpenStart) != VertexFlags:
-:Empty)
+      if ((local_minima->vertex->flags & VertexFlags::OpenStart) != VertexFlags::Empty)
       {
         left_bound = nullptr;
       }
@@ -1251,8 +1220,7 @@ t)
         SetDx(*left_bound);
       }
 
-      if ((local_minima->vertex->flags & VertexFlags::OpenEnd) != VertexFlags::E
-mpty)
+      if ((local_minima->vertex->flags & VertexFlags::OpenEnd) != VertexFlags::Empty)
       {
         right_bound = nullptr;
       }
@@ -1268,20 +1236,17 @@ mpty)
         SetDx(*right_bound);
       }
 
-      //Currently LeftB is just the descending bound and RightB is the ascending
-.
+      //Currently LeftB is just the descending bound and RightB is the ascending.
       //Now if the LeftB isn't on the left of RightB then we need swap them.
       if (left_bound && right_bound)
       {
         if (IsHorizontal(*left_bound))
         {
-          if (IsHeadingRightHorz(*left_bound)) SwapActives(left_bound, right_bou
-nd);
+          if (IsHeadingRightHorz(*left_bound)) SwapActives(left_bound, right_bound);
         }
         else if (IsHorizontal(*right_bound))
         {
-          if (IsHeadingLeftHorz(*right_bound)) SwapActives(left_bound, right_bou
-nd);
+          if (IsHeadingLeftHorz(*right_bound)) SwapActives(left_bound, right_bound);
         }
         else if (left_bound->dx < right_bound->dx)
           SwapActives(left_bound, right_bound);
@@ -1323,8 +1288,7 @@ nd);
         while (right_bound->next_in_ael &&
           IsValidAelOrder(*right_bound->next_in_ael, *right_bound))
         {
-          IntersectEdges(*right_bound, *right_bound->next_in_ael, right_bound->b
-ot);
+          IntersectEdges(*right_bound, *right_bound->next_in_ael, right_bound->bot);
           SwapPositionsInAEL(*right_bound, *right_bound->next_in_ael);
         }
 
@@ -1511,8 +1475,7 @@ ot);
     else
       SetOwner(e2.outrec, e1.outrec);
 
-    //and e1 and e2 are maxima and are about to be dropped from the Actives list
-.
+    //and e1 and e2 are maxima and are about to be dropped from the Actives list.
     e1.outrec = nullptr;
     e2.outrec = nullptr;
   }
@@ -1683,7 +1646,7 @@ ot);
   void ClipperBase::FixSelfIntersects(OutRec* outrec)
   {
     OutPt* op2 = outrec->pts;
-    if (op2->prev == op2->next->next)
+    if (op2->prev == op2->next->next) 
       return; // because triangles can't self-intersect
     for (; ; )
     {
@@ -1803,8 +1766,7 @@ ot);
     while (result)
     {
       if (result->local_min == e->local_min) return result;
-      else if (!IsHorizontal(*result) && e->bot != result->bot) result = nullptr
-;
+      else if (!IsHorizontal(*result) && e->bot != result->bot) result = nullptr;
       else result = result->next_in_ael;
     }
     result = e->prev_in_ael;
@@ -1850,14 +1812,14 @@ ot);
 
       switch (fillrule_)
       {
-      case FillRule::Positive:
-        if (edge_c->wind_cnt != 1) return;
+      case FillRule::Positive: 
+        if (edge_c->wind_cnt != 1) return; 
         break;
-      case FillRule::Negative:
-        if (edge_c->wind_cnt != -1) return;
+      case FillRule::Negative: 
+        if (edge_c->wind_cnt != -1) return; 
         break;
-      default:
-        if (std::abs(edge_c->wind_cnt) != 1) return;
+      default: 
+        if (std::abs(edge_c->wind_cnt) != 1) return; 
       }
 
 #ifdef USINGZ
@@ -1978,7 +1940,7 @@ ot);
     const bool e1_windcnt_in_01 = old_e1_windcnt == 0 || old_e1_windcnt == 1;
     const bool e2_windcnt_in_01 = old_e2_windcnt == 0 || old_e2_windcnt == 1;
 
-    if ((!IsHotEdge(e1) && !e1_windcnt_in_01) ||
+    if ((!IsHotEdge(e1) && !e1_windcnt_in_01) || 
       (!IsHotEdge(e2) && !e2_windcnt_in_01))
         return;
 
@@ -1989,10 +1951,8 @@ ot);
     //if both edges are 'hot' ...
     if (IsHotEdge(e1) && IsHotEdge(e2))
     {
-      if ((old_e1_windcnt != 0 && old_e1_windcnt != 1) || (old_e2_windcnt != 0 &
-& old_e2_windcnt != 1) ||
-        (e1.local_min->polytype != e2.local_min->polytype && cliptype_ != ClipTy
-pe::Xor))
+      if ((old_e1_windcnt != 0 && old_e1_windcnt != 1) || (old_e2_windcnt != 0 && old_e2_windcnt != 1) ||
+        (e1.local_min->polytype != e2.local_min->polytype && cliptype_ != ClipType::Xor))
       {
 #ifdef USINGZ
         resultOp = AddLocalMaxPoly(e1, e2, pt);
@@ -2103,10 +2063,8 @@ pe::Xor))
 #endif
           break;
         case ClipType::Difference:
-          if (((GetPolyType(e1) == PathType::Clip) && (e1Wc2 > 0) && (e2Wc2 > 0)
-) ||
-            ((GetPolyType(e1) == PathType::Subject) && (e1Wc2 <= 0) && (e2Wc2 <=
- 0)))
+          if (((GetPolyType(e1) == PathType::Clip) && (e1Wc2 > 0) && (e2Wc2 > 0)) ||
+            ((GetPolyType(e1) == PathType::Subject) && (e1Wc2 <= 0) && (e2Wc2 <= 0)))
           {
 #ifdef USINGZ
             resultOp = AddLocalMinPoly(e1, e2, pt, false);
@@ -2169,8 +2127,7 @@ pe::Xor))
     }
   }
 
-  bool ClipperBase::ExecuteInternal(ClipType ct, FillRule fillrule, bool use_pol
-ytrees)
+  bool ClipperBase::ExecuteInternal(ClipType ct, FillRule fillrule, bool use_polytrees)
   {
     cliptype_ = ct;
     fillrule_ = fillrule;
@@ -2266,8 +2223,7 @@ ytrees)
       [](HorzSegment& hs) { return UpdateHorzSegment(hs); });
     if (j < 2) return;
 
-    std::stable_sort(horz_seg_list_.begin(), horz_seg_list_.end(), HorzSegSorter
-());
+    std::stable_sort(horz_seg_list_.begin(), horz_seg_list_.end(), HorzSegSorter());
 
     HorzSegmentList::iterator hs1 = horz_seg_list_.begin(), hs2;
     HorzSegmentList::iterator hs_end = hs1 +j;
@@ -2348,7 +2304,7 @@ ytrees)
         }
 
         if (using_polytree_) //#498, #520, #584, D#576, #618
-        {
+        {          
           if (Path2ContainsPath1(or1->pts, or2->pts))
           {
             //swap or1's & or2's pts
@@ -2379,7 +2335,7 @@ ytrees)
         if (using_polytree_)
         {
           SetOwner(or2, or1);
-          if (or2->splits)
+          if (or2->splits) 
             MoveSplits(or2, or1); //#618
         }
         else
@@ -2497,8 +2453,7 @@ ytrees)
     //crucial that intersections only occur between adjacent edges.
 
     //First we do a quicksort so intersections proceed in a bottom up order ...
-    std::sort(intersect_nodes_.begin(), intersect_nodes_.end(), IntersectListSor
-t);
+    std::sort(intersect_nodes_.begin(), intersect_nodes_.end(), IntersectListSort);
     //Now as we process these intersections, we must sometimes adjust the order
     //to ensure that intersecting edges are always adjacent ...
 
@@ -2580,34 +2535,20 @@ t);
   }
 
   void ClipperBase::DoHorizontal(Active& horz)
-    /***************************************************************************
-****
-        * Notes: Horizontal edges (HEs) at scanline intersections (ie at the top
- or    *
-        * bottom of a scanbeam) are processed as if layered.The order in which H
-Es     *
-        * are processed doesn't matter. HEs intersect with the bottom vertices o
-f      *
-        * other HEs[#] and with non-horizontal edges [*]. Once these intersectio
-ns     *
-        * are completed, intermediate HEs are 'promoted' to the next edge in the
-ir     *
-        * bounds, and they in turn may be intersected[%] by other HEs.
-       *
-        *
-       *
-        * eg: 3 horizontals at a scanline:    /   |                     /
-    /  *
-        *              |                     /    |     (HE3)o ========%========
-== o   *
-        *              o ======= o(HE2)     /     |         /         /
-       *
-        *          o ============#=========*======*========#=========o (HE1)
-       *
-        *         /              |        /       |       /
-       *
-        ************************************************************************
-*******/
+    /*******************************************************************************
+        * Notes: Horizontal edges (HEs) at scanline intersections (ie at the top or    *
+        * bottom of a scanbeam) are processed as if layered.The order in which HEs     *
+        * are processed doesn't matter. HEs intersect with the bottom vertices of      *
+        * other HEs[#] and with non-horizontal edges [*]. Once these intersections     *
+        * are completed, intermediate HEs are 'promoted' to the next edge in their     *
+        * bounds, and they in turn may be intersected[%] by other HEs.                 *
+        *                                                                              *
+        * eg: 3 horizontals at a scanline:    /   |                     /           /  *
+        *              |                     /    |     (HE3)o ========%========== o   *
+        *              o ======= o(HE2)     /     |         /         /                *
+        *          o ============#=========*======*========#=========o (HE1)           *
+        *         /              |        /       |       /                            *
+        *******************************************************************************/
   {
     Point64 pt;
     bool horzIsOpen = IsOpen(horz);
@@ -2688,8 +2629,7 @@ ir     *
               {
                 if (TopX(*e, pt.y) > pt.x) break;
               }
-              //otherwise we'll only break when horz's outslope is greater than
-e's
+              //otherwise we'll only break when horz's outslope is greater than e's
               else if (TopX(*e, pt.y) >= pt.x) break;
             }
             else
@@ -3005,22 +2945,21 @@ e's
       if (!split->pts && split->splits &&
         CheckSplitOwner(outrec, split->splits)) return true; //#942
       split = GetRealOutRec(split);
-      if (!split || split == outrec || split->recursive_split == outrec) continu
-e;
+      if (!split || split == outrec || split->recursive_split == outrec) continue;
       split->recursive_split = outrec; // prevent infinite loops
 
       if (split->splits && CheckSplitOwner(outrec, split->splits))
-        return true;
+        return true;    
 
       if (!CheckBounds(split) || !split->bounds.Contains(outrec->bounds) ||
         !Path2ContainsPath1(outrec->pts, split->pts)) continue;
-
+     
       if (!IsValidOwner(outrec, split)) // split is owned by outrec! (#957)
           split->owner = outrec->owner;
 
       outrec->owner = split;
       return true;
-
+      
     }
     return false;
   }
@@ -3034,8 +2973,7 @@ e;
 
     while (outrec->owner)
     {
-      if (outrec->owner->splits && CheckSplitOwner(outrec, outrec->owner->splits
-)) break;
+      if (outrec->owner->splits && CheckSplitOwner(outrec, outrec->owner->splits)) break;
       if (outrec->owner->pts && CheckBounds(outrec->owner) &&
         outrec->owner->bounds.Contains(outrec->bounds) &&
         Path2ContainsPath1(outrec->pts, outrec->owner->pts)) break;
@@ -3115,8 +3053,7 @@ e;
     }
   }
 
-  bool BuildPathD(OutPt* op, bool reverse, bool isOpen, PathD& path, double inv_
-scale)
+  bool BuildPathD(OutPt* op, bool reverse, bool isOpen, PathD& path, double inv_scale)
   {
     if (!op || op->next == op || (!isOpen && op->next == op->prev))
       return false;

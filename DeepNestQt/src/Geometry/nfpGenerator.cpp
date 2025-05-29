@@ -1,7 +1,8 @@
 #include "nfpGenerator.h"
-#include "clipper.h" // Ensure this is the correct include for Clipper2 operations like MinkowskiSum
+#include "Clipper2/clipper.h" // Ensure this is the correct include for Clipper2 operations like MinkowskiSum
 #include <QDebug>
 #include <algorithm> // Required for std::reverse
+#include <internalTypes.h>
 
 namespace Geometry {
 
@@ -27,6 +28,20 @@ Clipper2Lib::PathsD NfpGenerator::qPolygonFToPathsD(const QPolygonF& polygon) co
         paths.push_back(path);
     }
     return paths;
+}
+
+Clipper2Lib::PathD NfpGenerator::qPolygonFToPathD(const QPolygonF& polygon) const {
+    //Clipper2Lib::PathsD paths;
+    Clipper2Lib::PathD path;
+    for (const QPointF& pt : polygon) {
+        path.push_back(Clipper2Lib::PointD(pt.x() * scale_, pt.y() * scale_));
+    }
+    // Clipper2 often expects open paths for Minkowski sums, but QPolygonF might be closed.
+    // Depending on Clipper2's exact requirement, ensure path is not explicitly closed if not needed.
+    // QPolygonF iterators skip the duplicate closing point if it's closed.
+    //    paths.push_back(path);
+
+    return path;
 }
 
 Clipper2Lib::PathsD NfpGenerator::qPolygonFsToPathsD(const QList<QPolygonF>& polygons) const {
@@ -103,16 +118,16 @@ QList<QPolygonF> NfpGenerator::minkowskiNfp(const Core::InternalPart& partA_orbi
     // This forms the basic NFP. Holes need to be incorporated.
     // Clipper2's MinkowskiSum function takes Paths, so it can handle a shape and its holes.
     
-    Clipper2Lib::PathsD pathsB_outer = qPolygonFToPathsD(partB_static.outerBoundary);
+    Clipper2Lib::PathD pathsB_outer = qPolygonFToPathD(partB_static.outerBoundary);
     // For NFP, we need to consider holes of B as "solid" parts of B's NFP contribution,
     // and holes of A as "empty" parts of A's NFP contribution.
 
     // Reflect partA around its origin (assuming (0,0) is its reference point for placement)
     Core::InternalPart reflectedA = reflectPartAroundOrigin(partA_orbiting);
-    Clipper2Lib::PathsD pathsReflectedA_outer = qPolygonFToPathsD(reflectedA.outerBoundary);
+    Clipper2Lib::PathD pathsReflectedA_outer = qPolygonFToPathD(reflectedA.outerBoundary);
 
     // Calculate MinkowskiSum(B_outer, ReflectedA_outer)
-    Clipper2Lib::PathsD nfpPaths = Clipper2Lib::MinkowskiSum(pathsB_outer, pathsReflectedA_outer, false); // false for open paths typically
+    Clipper2Lib::PathsD nfpPaths = Clipper2Lib::MinkowskiSum(pathsB_outer, pathsReflectedA_outer, false, 2); // false for open paths typically
 
     // This is a simplified NFP. A full NFP considering holes would be:
     // NFP_primary = MinkowskiSum(B_outer, ReflectedA_outer)
@@ -172,10 +187,10 @@ QList<QPolygonF> NfpGenerator::minkowskiNfpInside(const Core::InternalPart& part
     Clipper2Lib::PathsD forbiddenRegionsFromBHoles;
     if (!partB_container.holes.isEmpty()) {
         for (const QPolygonF& bHole_qpoly : partB_container.holes) {
-            Clipper2Lib::PathsD bHole_paths = qPolygonFToPathsD(bHole_qpoly);
-            Clipper2Lib::PathsD nfp_for_bHole = Clipper2Lib::MinkowskiSum(bHole_paths, pathsReflectedA_outer, false);
+            Clipper2Lib::PathD bHole_paths = qPolygonFToPathD(bHole_qpoly);
+            Clipper2Lib::PathsD nfp_for_bHole = Clipper2Lib::MinkowskiSum(bHole_paths, pathsReflectedA_outer[0], false, 2);
             // Union all forbidden regions
-            if (forbiddenRegionsFromBHoles.isEmpty()) {
+            if (forbiddenRegionsFromBHoles.empty()) {
                 forbiddenRegionsFromBHoles = nfp_for_bHole;
             } else {
                 forbiddenRegionsFromBHoles = Clipper2Lib::Union(forbiddenRegionsFromBHoles, nfp_for_bHole, Clipper2Lib::FillRule::NonZero);

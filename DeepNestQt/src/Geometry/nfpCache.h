@@ -6,6 +6,7 @@
 #include <QList>
 #include <QHash>
 #include <QPair> // For QPair used in key generation
+#include <QMutex>
 
 namespace Geometry {
 

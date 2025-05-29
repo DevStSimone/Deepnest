@@ -1,8 +1,8 @@
 #include "nestingWorker.h"
-#include "Core/internalTypes.h" // For Core::InternalPart, Core::InternalSheet
-#include "Core/nestingEngine.h"  // For Core::NestingEngine
-#include "Geometry/geometryUtils.h" // For GeometryUtils::signedArea for orientation
-#include "Geometry/SimplifyPath.h" // For path simplification
+#include "internalTypes.h" // For Core::InternalPart, Core::InternalSheet
+#include "nestingEngine.h"  // For Core::NestingEngine
+#include "geometryUtils.h" // For GeometryUtils::signedArea for orientation
+#include "SimplifyPath.h" // For path simplification
 #include <QTransform> // For path conversions
 #include <QDebug>
 #include <QThread>     // For QThread::currentThreadId()
@@ -52,7 +52,7 @@ Core::InternalPart NestingWorker::convertPathToInternalPart(const QString& id, c
     Core::InternalPart part;
     part.id = id;
 
-    QList<QPolygonF> subPaths = painterPath.toSubpathPolygons(QTransform(), curveTolerance);
+    QList<QPolygonF> subPaths = painterPath.toSubpathPolygons(QTransform());//, curveTolerance);
     if (subPaths.isEmpty()) {
         qWarning() << "Part ID" << id << ": toSubpathPolygons resulted in no paths.";
         return part; 
@@ -92,7 +92,7 @@ Core::InternalPart NestingWorker::convertPathToInternalPart(const QString& id, c
 
 Core::InternalSheet NestingWorker::convertPathToInternalSheet(const QPainterPath& painterPath, double curveTolerance) {
     Core::InternalSheet sheet;
-    QList<QPolygonF> subPaths = painterPath.toSubpathPolygons(QTransform(), curveTolerance);
+    QList<QPolygonF> subPaths = painterPath.toSubpathPolygons(QTransform());//, curveTolerance);
      if (subPaths.isEmpty()) {
         qWarning() << "Sheet conversion: toSubpathPolygons resulted in no paths.";
         return sheet;

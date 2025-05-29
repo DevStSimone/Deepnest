@@ -6,6 +6,7 @@
 #include <QString>
 #include <QList>
 #include <QPainterPath> // Required for QPair<QPainterPath, int>
+#include <internalTypes.h>
 
 // Forward declare SvgNest types to avoid circular dependency if full SvgNest.h is not needed
 // However, SvgNest::Configuration and SvgNest::NestSolution are used directly by value

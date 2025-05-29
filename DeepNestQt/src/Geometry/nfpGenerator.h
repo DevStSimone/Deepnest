@@ -2,7 +2,7 @@
 #define NFPGENERATOR_H
 
 #include "internalTypes.h" // For Core::InternalPart
-#include "clipper.h"       // From Clipper2 library (clipper.h is the main header)
+#include "Clipper2/clipper.h"       // From Clipper2 library (clipper.h is the main header)
 #include <QList>
 #include <QPolygonF>
 
@@ -43,6 +43,7 @@ private:
     double scale_; // Scale factor for Clipper operations
 
     // Helper to convert QPolygonF to Clipper2 PathsD
+    Clipper2Lib::PathD qPolygonFToPathD(const QPolygonF& polygon) const;
     Clipper2Lib::PathsD qPolygonFToPathsD(const QPolygonF& polygon) const;
     Clipper2Lib::PathsD qPolygonFsToPathsD(const QList<QPolygonF>& polygons) const;
     // Helper to convert Clipper2 PathsD to QList<QPolygonF>

@@ -19,7 +19,7 @@ struct TransformedPath {
     // just the geometry of the two shapes as they are to be compared.
 };
 
-
+struct InternalSheet;
 // Represents a part to be nested, including its main shape and any holes.
 // This structure would be the output of converting QPainterPath from SvgNest input.
 struct InternalPart {
@@ -38,6 +38,8 @@ struct InternalPart {
         }
     }
     
+    InternalPart(const InternalSheet& sheet);
+
     bool isValid() const { return !outerBoundary.isEmpty(); }
 };
 
@@ -56,8 +58,21 @@ struct InternalSheet {
         }
     }
      bool isValid() const { return !outerBoundary.isEmpty(); }
+
+    InternalSheet(const InternalPart& part )
+        : outerBoundary(part.outerBoundary), holes(part.holes) {
+        if (!outerBoundary.isEmpty()) {
+            bounds = outerBoundary.boundingRect();
+        }
+    }
 };
 
+InternalPart::InternalPart(const InternalSheet& part )
+    : outerBoundary(part.outerBoundary), holes(part.holes) {
+    if (!outerBoundary.isEmpty()) {
+        bounds = outerBoundary.boundingRect();
+    }
+}
 
 } // namespace Core
 #endif // INTERNALTYPES_H

@@ -7,9 +7,14 @@
 
 namespace GeometryUtils {
     // Placeholder for various geometric utility functions
-    // double area(const QPolygonF& polygon);
-    // QRectF boundingBox(const QPolygonF& polygon);
-    // bool isPointInPolygon(const QPointF& point, const QPolygonF& polygon);
+
+
+double signedArea(const QPolygonF& polygon);
+double area(const QPolygonF& polygon);
+
+QRectF boundingBox(const QPolygonF& polygon);
+
+bool isPointInPolygon(const QPointF& point, const QPolygonF& polygon, Qt::FillRule fillRule = Qt::OddEvenFill );
 }
 
 #endif // GEOMETRYUTILS_H

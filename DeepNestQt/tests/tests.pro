@@ -27,6 +27,7 @@ SOURCES += \
     $$DEEPNESTQT_SRC_DIR/Geometry/geometryUtils.cpp \
     $$DEEPNESTQT_SRC_DIR/Geometry/nfpGenerator.cpp \
     $$DEEPNESTQT_SRC_DIR/Geometry/nfpCache.cpp \
+    $$DEEPNESTQT_SRC_DIR/External/Minkowski/minkowski_wrapper.cpp \
     # Clipper2 sources
     $$DEEPNESTQT_SRC_DIR/External/Clipper2/Cpp/Clipper2Lib/clipper.engine.cpp \
     $$DEEPNESTQT_SRC_DIR/External/Clipper2/Cpp/Clipper2Lib/clipper.offset.cpp \
@@ -34,6 +35,8 @@ SOURCES += \
 
 # Test source file
 SOURCES += tst_SvgNest.cpp main_test.cpp
+
+CONFIG += boost # Also add to test project for consistency
 
 # Define where to find the test class header
 HEADERS += tst_SvgNest.h # Will create this header for the test class

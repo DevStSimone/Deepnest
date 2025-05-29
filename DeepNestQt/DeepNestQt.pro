@@ -51,15 +51,22 @@ CLIPPER2_SRC_DIR = src/External/Clipper2/Cpp/Clipper2Lib
 SOURCES += \
     $$CLIPPER2_SRC_DIR/clipper.engine.cpp \
     $$CLIPPER2_SRC_DIR/clipper.offset.cpp \
-    $$CLIPPER2_SRC_DIR/clipper.rectclip.cpp
+    $$CLIPPER2_SRC_DIR/clipper.rectclip.cpp \
+    src/External/Minkowski/minkowski_wrapper.cpp
     # Add clipper.core.cpp here if it exists and is needed for compilation,
     # otherwise, if it's header-only, it's fine.
 
 # Make sure headers from Clipper2Lib are accessible
 INCLUDEPATH += $$CLIPPER2_SRC_DIR
+INCLUDEPATH += src/External/Minkowski # Added for minkowski_wrapper.h
 
 # For building a shared library (DLL/SO)
 # CONFIG += sharedlib # Or staticlib if you prefer
+
+CONFIG += boost # Attempt to make qmake auto-configure for Boost
+# If specific Boost libraries are needed and CONFIG += boost isn't enough:
+# win32: LIBS += -L"path/to/boost/libs" -llibboost_polygon-vcXXX-mt-gd-x64-1_XX
+# unix: LIBS += -lboost_polygon
 
 # If your library is intended to be used by other qmake projects, you might want to create a .pri file.
 # For now, this .pro file will build the library itself.

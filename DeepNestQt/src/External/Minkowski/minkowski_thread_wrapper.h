@@ -37,8 +37,8 @@ struct NfpBatchResultItem {
 bool CalculateNfp_Batch_MultiThreaded(
     const std::vector<NfpTaskItem>& tasks,
     std::vector<NfpBatchResultItem>& results,
-    double fixed_scale_for_boost_poly,
-    int DANGER_requested_thread_count 
+    // double fixed_scale_for_boost_poly, // Removed: Implementation now uses per-task dynamic scaling
+    int DANGER_requested_thread_count
 );
 
 } // namespace CustomMinkowski

@@ -13,6 +13,8 @@
 #include <QDoubleSpinBox> 
 #include <QComboBox>      
 #include <QCheckBox>      
+#include <QGraphicsPathItem> // For adding paths to the scene
+#include <QPen>              // For styling path items
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -183,6 +185,21 @@ void MainWindow::setupUi() {
         resultsTextEdit_->setReadOnly(true);
         resultsLayout->addWidget(resultsTextEdit_); // Add if new
     }
+
+    // --- Graphics View for Nesting Result ---
+    if (!graphicsScene_) {
+        graphicsScene_ = new QGraphicsScene(this);
+    }
+    if (!graphicsView_) {
+        graphicsView_ = new QGraphicsView(graphicsScene_, this);
+        graphicsView_->setRenderHint(QPainter::Antialiasing);
+        graphicsView_->setMinimumSize(300, 200); // Example minimum size
+        if (resultsLayout) { // Should exist if resultsGroupBox exists
+            resultsLayout->addWidget(graphicsView_);
+        } else { // Fallback if resultsLayout somehow wasn't created, though unlikely
+            mainLayout->addWidget(graphicsView_);
+        }
+    }
     
     // Connections for buttons (might be redundant if called multiple times, but connect is safe)
     connect(startButton_, &QPushButton::clicked, this, &MainWindow::onStartNestingClicked);
@@ -236,13 +253,20 @@ void MainWindow::onStartNestingClicked() {
     if(progressBar_) progressBar_->setValue(0);
     applyUiToConfiguration(); 
 
+    originalParts_.clear(); // Clear previously stored parts
     svgNestInstance_->clearParts();
     svgNestInstance_->clearSheets();
     
     QPainterPath part1; part1.addRect(0, 0, 50, 50);
-    svgNestInstance_->addPart("square_1", part1, 2);
+    QString id1 = "square_1";
+    svgNestInstance_->addPart(id1, part1, 2);
+    originalParts_.insert(id1, part1);
+
     QPainterPath part2; part2.moveTo(0,0); part2.lineTo(30,0); part2.lineTo(15,30); part2.closeSubpath();
-    svgNestInstance_->addPart("triangle_1", part2, 1);
+    QString id2 = "triangle_1";
+    svgNestInstance_->addPart(id2, part2, 1);
+    originalParts_.insert(id2, part2);
+
     QPainterPath sheet; sheet.addRect(0, 0, 200, 150);
     svgNestInstance_->addSheet(sheet);
 
@@ -280,25 +304,47 @@ void MainWindow::handleNewSolution(const SvgNest::NestSolution& solution) {
 }
 
 void MainWindow::handleNestingFinished(const QList<SvgNest::NestSolution>& allSolutions) {
+    if (graphicsScene_) {
+        graphicsScene_->clear();
+    }
+
     // qDebug() << "Nesting Finished. Total solutions found:" << allSolutions.size(); // Optional
     if (resultsTextEdit_) { // Check if resultsTextEdit_ is not null
        resultsTextEdit_->append("\nNesting process finished.");
        if (!allSolutions.isEmpty()) {
-           // Assuming SvgNest/NestingEngine sorts solutions, best first.
            const SvgNest::NestSolution& bestSolution = allSolutions.first();
            resultsTextEdit_->append(QString("Best solution details: Fitness: %1. Parts placed: %2.")
                                     .arg(bestSolution.fitness)
                                     .arg(bestSolution.placements.size()));
-           // Could add more details about the best solution if available and desired.
-           // For example, list placed parts:
-           // resultsTextEdit_->append("Best solution placements:");
-           // for(const SvgNest::PlacedPart& p : bestSolution.placements) {
-           //     resultsTextEdit_->append(QString("  Part ID: %1 at (%2, %3) rot: %4 on sheet %5")
-           //                              .arg(p.partId)
-           //                              .arg(p.position.x()).arg(p.position.y())
-           //                              .arg(p.rotation)
-           //                              .arg(p.sheetIndex));
-           // }
+
+           if (graphicsScene_) {
+               // Draw the sheet (using the hardcoded one for now)
+               QPainterPath sheetPath; 
+               sheetPath.addRect(0, 0, 200, 150); // Matches the one in onStartNestingClicked
+               QPen sheetPen(Qt::black);
+               sheetPen.setWidth(2); // Make sheet outline a bit thicker
+               graphicsScene_->addPath(sheetPath, sheetPen);
+
+               // Draw placed parts
+               for (const SvgNest::PlacedPart& p : bestSolution.placements) {
+                   QPainterPath originalPath = originalParts_.value(p.partId);
+                   if (originalPath.isEmpty()) {
+                       qWarning() << "Could not find original path for part ID:" << p.partId;
+                       continue;
+                   }
+
+                   QGraphicsPathItem* item = new QGraphicsPathItem(originalPath);
+                   item->setPos(p.position);
+                   item->setRotation(p.rotation); 
+                   // Note: Rotation is around (0,0) of the item's coordinate system.
+                   // If parts are not defined with origin at a sensible rotation center,
+                   // this might look off. For simple shapes like rects from (0,0) it's usually fine.
+                   item->setBrush(Qt::cyan); // Example fill color
+                   graphicsScene_->addItem(item);
+               }
+               if(graphicsView_) graphicsView_->viewport()->update(); // Ensure redraw
+           }
+
        } else {
            resultsTextEdit_->append("No valid solutions were found.");
        }

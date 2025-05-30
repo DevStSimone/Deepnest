@@ -50,6 +50,10 @@ private:
     // Helper to convert Clipper2 PathsD to QList<QPolygonF>
     QList<QPolygonF> pathsDToQPolygonFs(const Clipper2Lib::PathsD& paths) const;
 
+    // Helper for converting InternalPart to CustomMinkowski::PolygonWithHoles
+    static CustomMinkowski::PolygonWithHoles internalPartToMinkowskiPolygon(const Core::InternalPart& internalPart);
+
+
     // --- Methods for NFP using Clipper2 (Minkowski Sum) ---
     // NFP(A, B) where A orbits B (B is static)
     // This is typically MinkowskiSum(B, Reflect(A, origin))
@@ -70,6 +74,22 @@ private:
 
     // --- Placeholders for original DeepNest NFP module integration ---
     QList<QPolygonF> originalModuleNfp(const Core::InternalPart& partA, const Core::InternalPart& partB, bool isInside, bool useThreads);
+
+public:
+    // Batch NFP generation using the multi-threaded original module
+    // The partPairs list contains: first = Orbiting Part, second = Static Part
+    // Returns a list of NfpResultPolygons, one for each pair, in the same order.
+    // Note: The keying for caching will require careful handling of part IDs, rotations, etc.
+    // which are not directly part of InternalPart but would be needed for a full cache key.
+    // This API assumes rotations/flips are pre-applied to InternalPart if that's the model,
+    // or that the NfpTaskItem for the batch processor would carry this info if needed by key gen.
+    // For now, this is a direct call to the batch processor. Caching might need to happen at a higher level
+    // or this function needs more info for robust cache key generation.
+    // Let's assume for now caching for batch results is handled by the caller or a subsequent refinement.
+    QList<CustomMinkowski::NfpResultPolygons> generateNfpBatch_OriginalModule(
+        const QList<QPair<Core::InternalPart, Core::InternalPart>>& partPairs,
+        int threadCount
+    );
 };
 
 } // namespace Geometry

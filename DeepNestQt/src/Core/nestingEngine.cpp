@@ -13,6 +13,22 @@
 const double BAD_FITNESS_SCORE = -std::numeric_limits<double>::infinity(); // If higher is better
 // const double BAD_FITNESS_SCORE = std::numeric_limits<double>::max(); // If lower is better
 
+// Helper to convert CustomMinkowski::NfpResultPolygons to QList<QPolygonF>
+// Adapted from nfpGenerator.cpp - consider moving to a shared utility if used in more places.
+static QList<QPolygonF> convertMinkowskiResultToQPolygonFs(const CustomMinkowski::NfpResultPolygons& resultPaths) {
+    QList<QPolygonF> qPolygons;
+    for (const CustomMinkowski::PolygonPath& mPath : resultPaths) {
+        QPolygonF qPoly;
+        qPoly.reserve(mPath.size());
+        for (const CustomMinkowski::Point& pt : mPath) {
+            qPoly.append(QPointF(pt.x, pt.y));
+        }
+        if (!qPoly.isEmpty()) {
+            qPolygons.append(qPoly);
+        }
+    }
+    return qPolygons;
+}
 
 namespace Core {
 
@@ -37,8 +53,6 @@ NestingEngine::NestingEngine(const SvgNest::Configuration& config,
       stopRequested_(false),
       solutionsFoundCount_(0) {
     qDebug() << "NestingEngine created. Parts to place:" << allParts_.size() << "Sheets available:" << sheets_.size();
-    // You can adjust the global QThreadPool if needed:
-    // QThreadPool::globalInstance()->setMaxThreadCount(desired_max_threads);
 }
 
 NestingEngine::~NestingEngine() {
@@ -49,6 +63,7 @@ QList<SvgNest::NestSolution> NestingEngine::runNesting() {
     qDebug() << "NestingEngine: Starting nesting process (parallel fitness eval)...";
     QElapsedTimer timer;
     timer.start();
+    batchNfpStore_.clear(); // Clear any previous batch results
 
     QList<SvgNest::NestSolution> allFoundSolutionsBestFirst; 
     solutionsFoundCount_ = 0;
@@ -57,6 +72,8 @@ QList<SvgNest::NestSolution> NestingEngine::runNesting() {
         qWarning() << "NestingEngine: No parts to place or no sheets available.";
         return allFoundSolutionsBestFirst;
     }
+
+    precomputeNfpsBatchIfNeeded(); // Attempt to batch compute NFPs
 
     geneticAlgorithm_.initializePopulation();
 
@@ -363,31 +380,40 @@ QList<QPolygonF> NestingEngine::getNfp(const InternalPart& partA, double rotatio
     
     // The parts pA_for_nfp, pB_for_nfp are transformed based on rotationA, rotationB for geometry calculation.
     // The key uses original part IDs and gene-defined rotations/flips.
-    InternalPart pA_for_nfp = transformPart(partA, rotationA); 
-    InternalPart pB_for_nfp = transformPart(partB, rotationB);
+    // Convention for nfpCache_.generateKey: (ID_A, rotA, flipA, ID_B, rotB, flipB, is_A_Static_Flag)
+    // Where A is the first part in the key, B is the second.
+    // is_A_Static_Flag = true if A is static and B orbits A.
+    // is_A_Static_Flag = false if B is static and A orbits B.
 
-    QString cacheKey;
-    if (partAIsStaticInKey) { // partA is static, partB orbits partA
-         cacheKey = nfpCache_.generateKey(partB.id, rotationB, flippedB,   
-                                          partA.id, rotationA, flippedA,   
-                                          true); // True because partA (the second one in key) is static
-    } else { // partA orbits partB, partB is static
-         cacheKey = nfpCache_.generateKey(partA.id, rotationA, flippedA,   
-                                          partB.id, rotationB, flippedB,   
-                                          false); // False because partA (the first one in key) is not static
+    // In getNfp, partA is the orbiting part, partB is the static part.
+    // So, for the key, partA is first, partB is second. partA is NOT static. So flag is false.
+    QString cacheKey = nfpCache_.generateKey(partA.id, rotationA, flippedA,
+                                             partB.id, rotationB, flippedB, // rotationB and flippedB for static part are usually 0 and false
+                                             false); // partA is orbiting, so it's not static.
+
+    // Check our temporary batch store first (used if original_module with batching was run)
+    if (batchNfpStore_.contains(cacheKey)) {
+        // qDebug() << "NestingEngine::getNfp: Found in batchNfpStore_ key:" << cacheKey;
+        return convertMinkowskiResultToQPolygonFs(batchNfpStore_.value(cacheKey));
     }
-
+    
+    // If not in batch store, proceed with standard cache and NFP generation logic
     Geometry::CachedNfp cachedNfp;
     if (nfpCache_.findNfp(cacheKey, cachedNfp)) {
         return cachedNfp.nfpPolygons;
     }
 
-    QList<QPolygonF> nfp;
+    InternalPart pA_for_nfp = transformPart(partA, rotationA); 
+    InternalPart pB_for_nfp = transformPart(partB, rotationB); // rotationB for static part is usually 0
+
+    // The partAIsStaticInKey parameter was confusing and is removed from this simplified path.
+    // We assume partA is always orbiting, partB is static.
     if (partAIsStaticInKey) { 
-         nfp = nfpGenerator_.calculateNfp(pB_for_nfp, pA_for_nfp, config_.placementType == "deepnest", false);
-    } else { 
-         nfp = nfpGenerator_.calculateNfp(pA_for_nfp, pB_for_nfp, config_.placementType == "deepnest", false);
+         qWarning() << "NestingEngine::getNfp: partAIsStaticInKey=true is deprecated here. Assuming partA orbits partB.";
+         // If this case truly needs different NFP (e.g. B orbits A), the caller should swap partA and partB.
     }
+    
+    QList<QPolygonF> nfp = nfpGenerator_.calculateNfp(pA_for_nfp, pB_for_nfp, config_.placementType == "deepnest", false);
     
     nfpCache_.storeNfp(cacheKey, Geometry::CachedNfp(nfp));
     return nfp;
@@ -399,14 +425,19 @@ QList<QPolygonF> NestingEngine::getNfpInside(const InternalPart& partA, double r
     InternalPart pA_for_nfp = transformPart(partA, rotationA);
     InternalPart pB_container_for_nfp = transformPart(containerB, rotationB);
 
-    // Key for "A fitting inside B (container)": A is dynamic, B is the static frame.
-    // generateKey(dynamicId, dynamicRot, dynamicFlip, staticId, staticRot, staticFlip, is_first_part_static_flag)
-    // Here, partA is dynamic (first part in key), containerB is static (second part in key).
-    // So, the "is_first_part_static_flag" should be false.
-    QString cacheKey = nfpCache_.generateKey(partA.id, rotationA, flippedA,          
-                                             containerB.id, rotationB, flippedB,    
-                                             false); 
+    // Key for "A fitting inside B (container)": A is dynamic (orbiting), B is the static container.
+    // (ID_A, rotA, flipA, ID_B_container, rotB_container, flipB_container, is_A_Static_Flag)
+    // is_A_Static_Flag = false, because A is dynamic.
+    QString cacheKey = nfpCache_.generateKey(partA.id, rotationA, flippedA,
+                                             containerB.id, rotationB, flippedB,
+                                             false);
     
+    // Check our temporary batch store first - though getNfpInside might not be batched effectively by current precompute
+    if (batchNfpStore_.contains(cacheKey)) {
+        // qDebug() << "NestingEngine::getNfpInside: Found in batchNfpStore_ key:" << cacheKey;
+        return convertMinkowskiResultToQPolygonFs(batchNfpStore_.value(cacheKey));
+    }
+
     Geometry::CachedNfp cachedNfp;
     if (nfpCache_.findNfp(cacheKey, cachedNfp)) {
         return cachedNfp.nfpPolygons;
@@ -418,5 +449,95 @@ QList<QPolygonF> NestingEngine::getNfpInside(const InternalPart& partA, double r
     return nfp;
 }
 
+
+void NestingEngine::precomputeNfpsBatchIfNeeded() {
+    bool useBatchOriginalModule = (config_.placementType == "deepnest" && config_.rotations > 0); 
+    // Using config_.rotations > 0 as a proxy for needing multiple NFPs.
+    // A more explicit config like `config_.useOriginalModuleBatch = true` and `config_.nfpThreads > 0` would be better.
+
+    if (!useBatchOriginalModule || allParts_.isEmpty()) {
+        return;
+    }
+
+    qDebug() << "NestingEngine: Precomputing NFPs using batch original_module.";
+
+    struct NfpTaskDefinition {
+        QString key;
+        InternalPart partA_transformed; // Orbiting part, already rotated
+        InternalPart partB_static;      // Static part
+    };
+    QList<NfpTaskDefinition> taskDefinitions;
+    QHash<QString, bool> uniqueKeys; // To avoid submitting duplicate NFP requests to batch
+
+    for (int i = 0; i < allParts_.size(); ++i) {
+        const Core::InternalPart& p1_base = allParts_[i];
+        if (!p1_base.isValid()) continue;
+
+        for (int j = 0; j < allParts_.size(); ++j) {
+            const Core::InternalPart& p2_static = allParts_[j];
+            if (!p2_static.isValid()) continue;
+
+            // P1 orbits P2 (P2 is static)
+            // Iterate through rotations for P1
+            int numRotationSteps = (config_.rotations == 0) ? 1 : config_.rotations; // if 0, means 0 degrees only once
+            for (int rotStep = 0; rotStep < numRotationSteps; ++rotStep) {
+                double rotationA_degrees = (numRotationSteps == 1) ? 0.0 : rotStep * (360.0 / config_.rotations);
+                
+                // Generate cache key: partA (orbiting), partB (static). is_A_Static_Flag = false.
+                // Note: p1_base.id, rotationA_degrees, p2_static.id, static_rotation=0, static_flip=false
+                QString key = nfpCache_.generateKey(p1_base.id, rotationA_degrees, false, 
+                                                    p2_static.id, 0, false, 
+                                                    false); // p1_base is orbiting, not static
+                
+                if (!uniqueKeys.contains(key)) {
+                    InternalPart p1_transformed = transformPart(p1_base, rotationA_degrees);
+                    taskDefinitions.append({key, p1_transformed, p2_static});
+                    uniqueKeys.insert(key, true);
+                }
+            }
+        }
+        // TODO: Consider part-vs-sheet NFPs if original_module is used for them.
+        // For now, focusing on part-part NFPs as per current originalModuleNfp usage.
+    }
+    
+    if (taskDefinitions.isEmpty()) {
+        qDebug() << "NestingEngine: No unique NFP tasks identified for batch precomputation.";
+        return;
+    }
+
+    QList<QPair<Core::InternalPart, Core::InternalPart>> batchCallPairs;
+    QList<QString> batchCallKeys; // Store keys in same order as pairs for result mapping
+    for(const auto& taskDef : taskDefinitions) {
+        batchCallPairs.append(qMakePair(taskDef.partA_transformed, taskDef.partB_static));
+        batchCallKeys.append(taskDef.key);
+    }
+
+    // Determine thread count (heuristic)
+    int numThreads = QThread::idealThreadCount();
+    if (config_.populationSize > 0 && config_.populationSize / 4 > 0) { // Example heuristic
+         numThreads = std::min(numThreads, config_.populationSize / 4);
+    }
+    numThreads = std::max(1, numThreads); // Ensure at least 1 thread
+
+    qDebug() << "NestingEngine: Calling generateNfpBatch_OriginalModule for" << batchCallPairs.size() << "pairs, using threads:" << numThreads;
+    QList<CustomMinkowski::NfpResultPolygons> batchRawResults = 
+        nfpGenerator_.generateNfpBatch_OriginalModule(batchCallPairs, numThreads);
+
+    if (batchRawResults.size() != batchCallKeys.size()) {
+        qWarning() << "NestingEngine: Batch NFP result size mismatch. Tasks:" << batchCallKeys.size() << "Results:" << batchRawResults.size();
+        return;
+    }
+
+    for (int i = 0; i < batchCallKeys.size(); ++i) {
+        const QString& key = batchCallKeys[i];
+        const CustomMinkowski::NfpResultPolygons& nfpRes = batchRawResults[i];
+        
+        // The generateNfpBatch_OriginalModule already logs warnings for individual failed tasks.
+        // It returns an empty NfpResultPolygons for failed tasks.
+        // So, we store whatever is returned. An empty list can mean a failure or a genuinely empty NFP.
+        batchNfpStore_.insert(key, nfpRes);
+    }
+    qDebug() << "NestingEngine: Finished precomputing and storing" << batchNfpStore_.size() << "NFPs in batchNfpStore_.";
+}
 
 } // namespace Core

@@ -55,8 +55,8 @@ typedef std::list<PolygonPath> NfpResultPolygons;
 bool CalculateNfp(
     const PolygonWithHoles& partA_orbiting, 
     const PolygonWithHoles& partB_static,
-    NfpResultPolygons& nfp_result,
-    double fixed_scale_for_boost_poly // The scale factor to convert doubles to integers for Boost.Polygon
+    NfpResultPolygons& nfp_result
+    // double fixed_scale_for_boost_poly, // Removed: Implementation now uses internal dynamic scaling
     // Consider adding a parameter for `use_holes` if the original logic supports it differently
     // or if sometimes we want NFP of just outer boundaries. For now, assume holes are always processed.
 );

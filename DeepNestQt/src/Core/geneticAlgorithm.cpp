@@ -45,11 +45,14 @@ QList<Gene> GeneticAlgorithm::getAllPartGenes() const {
     // For now, assume availableParts_ contains each instance. If not, this needs adjustment.
     // Or, the NestingWorker passes a list of part *instances* to GA.
     // Let's assume availableParts_ IS the list of all part instances to be placed.
-    int sourceIndex = 0; // This simple source index won't work if parts are not grouped by ID in availableParts_
-                         // A better approach would be to have a map<QString partId, int countSoFar> if parts are mixed.
-                         // Or, if availableParts_ has parts like [A,A,B,C,C,C], then this linear index is fine.
+    // NestingWorker ensures that 'availableParts_' is a flat list where each entry is a unique instance
+    // (e.g., if Part 'A' has quantity 2, 'availableParts_' will contain two separate InternalPart objects for 'A').
+    // Thus, 'sourceIndex' correctly becomes the direct index into the 'availableParts_' list for that specific instance.
+    int currentSourceIndex = 0; 
     for (const auto& part : availableParts_) {
-        allGenes.append(Gene(part.id, sourceIndex++)); // TODO: This sourceIndex needs to be per part ID if quantities > 1
+        // gene.partId stores the original ID (e.g., "PartA")
+        // gene.sourceIndex stores the index of this specific instance in the availableParts_ list.
+        allGenes.append(Gene(part.id, currentSourceIndex++)); 
     }
     return allGenes;
 }

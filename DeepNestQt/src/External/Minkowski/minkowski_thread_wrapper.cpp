@@ -1,539 +1,386 @@
-
-
-#include <iostream>
+#include "minkowski_thread_wrapper.h"
 #include <boost/polygon/polygon.hpp>
-#include <boost/asio.hpp>
-#include <boost/thread.hpp>
-#include <string>
-#include <iostream>
-#include <sstream>
-#include <limits>
+#include <boost/polygon/point_data.hpp>
+#include <boost/polygon/polygon_set_data.hpp>
+#include <boost/polygon/polygon_with_holes_data.hpp>
+// #include <boost/polygon/convenience_operators.hpp> // For operators like +=, -= on polygon_set_data
 
-#undef min
-#undef max
+#include <boost/asio/io_service.hpp>
+#include <boost/thread/thread.hpp>
+#include <boost/bind/bind.hpp>
+#include <boost/function.hpp>
 
-typedef boost::polygon::point_data<int> point;
-typedef boost::polygon::polygon_set_data<int> polygon_set;
-typedef boost::polygon::polygon_with_holes_data<int> polygon;
-typedef std::pair<point, point> edge;
+
+#include <vector>
+#include <list>
+#include <algorithm> // For std::reverse, std::min, std::max
+#include <limits>    // For std::numeric_limits
+#include <cmath>     // For std::fabs
+#include <iostream>  // For debugging (temporary)
+
+// Typedefs for Boost.Polygon, consistent with minkowski_wrapper.cpp and original
+typedef boost::polygon::point_data<int> BoostPoint;
+typedef boost::polygon::polygon_set_data<int> BoostPolygonSet;
+typedef boost::polygon::polygon_with_holes_data<int> BoostPolygonWithHoles;
+typedef std::pair<BoostPoint, BoostPoint> BoostEdge;
+
+// Using namespace for Boost.Polygon operators
 using namespace boost::polygon::operators;
 
-void convolve_two_segments(std::vector<point>& figure, const edge& a, const edge& b) {
-  using namespace boost::polygon;
-  figure.clear();
-  figure.push_back(point(a.first));
-  figure.push_back(point(a.first));
-  figure.push_back(point(a.second));
-  figure.push_back(point(a.second));
-  convolve(figure[0], b.second);
-  convolve(figure[1], b.first);
-  convolve(figure[2], b.first);
-  convolve(figure[3], b.second);
+namespace CustomMinkowski {
+
+// --- Start of Boost ASIO based thread_pool (adapted from original) ---
+class thread_pool {
+private:
+    boost::asio::io_service io_service_;
+    boost::asio::io_service::work work_;
+    boost::thread_group threads_;
+    std::size_t available_;
+    boost::mutex mutex_; // Mutex for 'available_' count
+    boost::condition_variable condition_; // To wait for all tasks to complete
+
+    std::atomic<std::size_t> tasks_in_progress_;
+
+public:
+    thread_pool(std::size_t pool_size)
+        : work_(io_service_),
+          available_(pool_size), // This was used differently in original, more like max tasks at once
+          tasks_in_progress_(0)
+    {
+        if (pool_size == 0) {
+            pool_size = boost::thread::hardware_concurrency();
+            if (pool_size == 0) pool_size = 2; // Fallback if hardware_concurrency is 0
+        }
+        for (std::size_t i = 0; i < pool_size; ++i) {
+            threads_.create_thread(boost::bind(&boost::asio::io_service::run, &io_service_));
+        }
+    }
+
+    ~thread_pool() {
+        io_service_.stop();
+        try {
+            threads_.join_all();
+        } catch (const std::exception&) {
+            // Suppress exceptions during shutdown
+        }
+    }
+
+    template <typename Task>
+    void run_task(Task task) {
+        tasks_in_progress_++;
+        io_service_.post(boost::bind(&thread_pool::wrap_task, this, boost::function<void()>(task)));
+    }
+
+    void wait_for_completion() {
+        boost::unique_lock<boost::mutex> lock(mutex_);
+        while (tasks_in_progress_ > 0) {
+            condition_.wait(lock);
+        }
+    }
+
+private:
+    void wrap_task(boost::function<void()> task) {
+        try {
+            task();
+        } catch (const std::exception& e) {
+            std::cerr << "Exception in thread task: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "Unknown exception in thread task." << std::endl;
+        }
+        
+        boost::unique_lock<boost::mutex> lock(mutex_);
+        tasks_in_progress_--;
+        if (tasks_in_progress_ == 0) {
+            condition_.notify_all();
+        }
+    }
+};
+// --- End of thread_pool ---
+
+
+// --- Core NFP Logic (convolve functions, adapted from original) ---
+void convolve_two_segments(std::vector<BoostPoint>& figure, const BoostEdge& a, const BoostEdge& b) {
+    figure.clear();
+    figure.push_back(BoostPoint(a.first));
+    figure.push_back(BoostPoint(a.first));
+    figure.push_back(BoostPoint(a.second));
+    figure.push_back(BoostPoint(a.second));
+    boost::polygon::convolve(figure[0], b.second);
+    boost::polygon::convolve(figure[1], b.first);
+    boost::polygon::convolve(figure[2], b.first);
+    boost::polygon::convolve(figure[3], b.second);
 }
 
 template <typename itrT1, typename itrT2>
-void convolve_two_point_sequences(polygon_set& result, itrT1 ab, itrT1 ae, itrT2 bb, itrT2 be) {
-  using namespace boost::polygon;
-  if(ab == ae || bb == be)
-    return;
-  point first_a = *ab;
-  point prev_a = *ab;
-  std::vector<point> vec;
-  polygon poly;
-  ++ab;
-  for( ; ab != ae; ++ab) {
-    point first_b = *bb;
-    point prev_b = *bb;
-    itrT2 tmpb = bb;
-    ++tmpb;
-    for( ; tmpb != be; ++tmpb) {
-      convolve_two_segments(vec, std::make_pair(prev_b, *tmpb), std::make_pair(prev_a, *ab));
-      set_points(poly, vec.begin(), vec.end());
-      result.insert(poly);
-      prev_b = *tmpb;
+void convolve_two_point_sequences(BoostPolygonSet& result, itrT1 ab, itrT1 ae, itrT2 bb, itrT2 be) {
+    if (ab == ae || bb == be) return;
+    // BoostPoint first_a = *ab; // Unused in original logic for this func
+    BoostPoint prev_a = *ab;
+    std::vector<BoostPoint> vec;
+    BoostPolygonWithHoles poly;
+    ++ab;
+    for (; ab != ae; ++ab) {
+        // BoostPoint first_b = *bb; // Unused
+        BoostPoint prev_b = *bb;
+        itrT2 tmpb = bb;
+        ++tmpb;
+        for (; tmpb != be; ++tmpb) {
+            convolve_two_segments(vec, std::make_pair(prev_b, *tmpb), std::make_pair(prev_a, *ab));
+            boost::polygon::set_points(poly, vec.begin(), vec.end());
+            result.insert(poly);
+            prev_b = *tmpb;
+        }
+        prev_a = *ab;
     }
-    prev_a = *ab;
-  }
 }
 
 template <typename itrT>
-void convolve_point_sequence_with_polygons(polygon_set& result, itrT b, itrT e, const std::vector<polygon>& polygons) {
-  using namespace boost::polygon;
-  for(std::size_t i = 0; i < polygons.size(); ++i) {
-    convolve_two_point_sequences(result, b, e, begin_points(polygons[i]), end_points(polygons[i]));
-    for(polygon_with_holes_traits<polygon>::iterator_holes_type itrh = begin_holes(polygons[i]);
-        itrh != end_holes(polygons[i]); ++itrh) {
-      convolve_two_point_sequences(result, b, e, begin_points(*itrh), end_points(*itrh));
+void convolve_point_sequence_with_polygons(BoostPolygonSet& result, itrT b, itrT e, const std::vector<BoostPolygonWithHoles>& polygons) {
+    for (std::size_t i = 0; i < polygons.size(); ++i) {
+        convolve_two_point_sequences(result, b, e, boost::polygon::begin_points(polygons[i]), boost::polygon::end_points(polygons[i]));
+        for (boost::polygon::polygon_with_holes_traits<BoostPolygonWithHoles>::iterator_holes_type itrh = boost::polygon::begin_holes(polygons[i]);
+             itrh != boost::polygon::end_holes(polygons[i]); ++itrh) {
+            convolve_two_point_sequences(result, b, e, boost::polygon::begin_points(*itrh), boost::polygon::end_points(*itrh));
+        }
     }
-  }
 }
 
-void convolve_two_polygon_sets(polygon_set& result, const polygon_set& a, const polygon_set& b) {
-  using namespace boost::polygon;
-  result.clear();
-  std::vector<polygon> a_polygons;
-  std::vector<polygon> b_polygons;
-  a.get(a_polygons);
-  b.get(b_polygons);
-  for(std::size_t ai = 0; ai < a_polygons.size(); ++ai) {
-    convolve_point_sequence_with_polygons(result, begin_points(a_polygons[ai]), 
-                                          end_points(a_polygons[ai]), b_polygons);
-    for(polygon_with_holes_traits<polygon>::iterator_holes_type itrh = begin_holes(a_polygons[ai]);
-        itrh != end_holes(a_polygons[ai]); ++itrh) {
-      convolve_point_sequence_with_polygons(result, begin_points(*itrh), 
-                                            end_points(*itrh), b_polygons);
+void convolve_two_polygon_sets(BoostPolygonSet& result, const BoostPolygonSet& pa, const BoostPolygonSet& pb) {
+    result.clear();
+    std::vector<BoostPolygonWithHoles> a_polygons;
+    std::vector<BoostPolygonWithHoles> b_polygons;
+    pa.get(a_polygons);
+    pb.get(b_polygons);
+
+    for (std::size_t ai = 0; ai < a_polygons.size(); ++ai) {
+        convolve_point_sequence_with_polygons(result, boost::polygon::begin_points(a_polygons[ai]),
+                                              boost::polygon::end_points(a_polygons[ai]), b_polygons);
+        for (boost::polygon::polygon_with_holes_traits<BoostPolygonWithHoles>::iterator_holes_type itrh = boost::polygon::begin_holes(a_polygons[ai]);
+             itrh != boost::polygon::end_holes(a_polygons[ai]); ++itrh) {
+            convolve_point_sequence_with_polygons(result, boost::polygon::begin_points(*itrh),
+                                                boost::polygon::end_points(*itrh), b_polygons);
+        }
+        for (std::size_t bi = 0; bi < b_polygons.size(); ++bi) {
+            if (a_polygons[ai].begin() == a_polygons[ai].end() || b_polygons[bi].begin() == b_polygons[bi].end()) continue;
+            BoostPolygonWithHoles tmp_poly = a_polygons[ai];
+            result.insert(boost::polygon::convolve(tmp_poly, *(boost::polygon::begin_points(b_polygons[bi]))));
+            tmp_poly = b_polygons[bi];
+            result.insert(boost::polygon::convolve(tmp_poly, *(boost::polygon::begin_points(a_polygons[ai]))));
+        }
     }
-    for(std::size_t bi = 0; bi < b_polygons.size(); ++bi) {
-      polygon tmp_poly = a_polygons[ai];
-      result.insert(convolve(tmp_poly, *(begin_points(b_polygons[bi]))));
-      tmp_poly = b_polygons[bi];
-      result.insert(convolve(tmp_poly, *(begin_points(a_polygons[ai]))));
+}
+// --- End of Core NFP Logic ---
+
+
+// Helper to convert CustomMinkowski::PolygonPath to std::vector<BoostPoint>
+std::vector<BoostPoint> toBoostPoints(const PolygonPath& path, double scale) {
+    std::vector<BoostPoint> boostPts;
+    boostPts.reserve(path.size());
+    for (const auto& p : path) {
+        boostPts.emplace_back(static_cast<int>(p.x * scale), static_cast<int>(p.y * scale));
     }
-  }
+    return boostPts;
 }
 
-class thread_pool
-{
-private:
-  boost::asio::io_service io_service_;
-  boost::asio::io_service::work work_;
-  boost::thread_group threads_;
-  std::size_t available_;
-  boost::mutex mutex_;
-public:
-
-  /// @brief Constructor.
-  thread_pool( std::size_t pool_size )
-    : work_( io_service_ ),
-      available_( pool_size )
-  {
-    for ( std::size_t i = 0; i < pool_size; ++i )
-    {
-      threads_.create_thread( boost::bind( &boost::asio::io_service::run,
-                                           &io_service_ ) );
+// Helper to convert Boost path (iterator pair) to CustomMinkowski::PolygonPath
+PolygonPath fromBoostPathToPolygonPath(boost::polygon::polygon_traits<BoostPolygonWithHoles>::iterator_type begin,
+                                       boost::polygon::polygon_traits<BoostPolygonWithHoles>::iterator_type end,
+                                       double inverse_scale, double x_shift, double y_shift) {
+    PolygonPath path;
+    for (auto itr = begin; itr != end; ++itr) {
+        path.push_back({
+            (static_cast<double>(itr->x()) / inverse_scale) + x_shift,
+            (static_cast<double>(itr->y()) / inverse_scale) + y_shift
+        });
     }
-  }
-  
-  void join(){
-  	try
-    {
-      threads_.join_all();
+    return path;
+}
+
+// Calculate bounds for dynamic scaling factor
+void calculate_bounds(const PolygonWithHoles& poly, double& min_x, double& max_x, double& min_y, double& max_y) {
+    for (const auto& p : poly.outer) {
+        min_x = std::min(min_x, p.x); max_x = std::max(max_x, p.x);
+        min_y = std::min(min_y, p.y); max_y = std::max(max_y, p.y);
     }
-    catch ( const std::exception& ) {}
-  }
-
-  /// @brief Destructor.
-  ~thread_pool()
-  {
-    // Force all threads to return from io_service::run().
-    io_service_.stop();
-
-    // Suppress all exceptions.
-    try
-    {
-      threads_.join_all();
+    for (const auto& hole : poly.holes) {
+        for (const auto& p : hole) {
+            min_x = std::min(min_x, p.x); max_x = std::max(max_x, p.x);
+            min_y = std::min(min_y, p.y); max_y = std::max(max_y, p.y);
+        }
     }
-    catch ( const std::exception& ) {}
-  }
+}
 
-  /// @brief Adds a task to the thread pool if a thread is currently available.
-  template < typename Task >
-  void run_task( Task task )
-  {
-    boost::unique_lock< boost::mutex > lock( mutex_ );
+// This function encapsulates the logic for a single NFP pair calculation.
+// It will be called by tasks in the thread pool.
+NfpBatchResultItem ProcessSingleNfpTask(const NfpTaskItem& task) {
+    NfpBatchResultItem result_item(task.taskId, false);
 
-    // If no threads are available, then return.
-    if ( 0 == available_ ) return;
+    // 1. Dynamic Scaling Factor Calculation (from original minkowski_thread_original.cc Worker::Do)
+    double Aminx = std::numeric_limits<double>::max(), Amaxx = std::numeric_limits<double>::lowest();
+    double Aminy = std::numeric_limits<double>::max(), Amaxy = std::numeric_limits<double>::lowest();
+    calculate_bounds(task.partA, Aminx, Amaxx, Aminy, Amaxy);
 
-    // Decrement count, indicating thread is no longer available.
-    --available_;
+    double Bminx = std::numeric_limits<double>::max(), Bmaxx = std::numeric_limits<double>::lowest();
+    double Bminy = std::numeric_limits<double>::max(), Bmaxy = std::numeric_limits<double>::lowest();
+    calculate_bounds(task.partB, Bminx, Bmaxx, Bminy, Bmaxy);
 
-    // Post a wrapped task into the queue.
-    io_service_.post( boost::bind( &thread_pool::wrap_task, this,
-                                   boost::function< void() >( task ) ) );
-  }
-
-private:
-  /// @brief Wrap a task so that the available count can be increased once
-  ///        the user provided task has completed.
-  void wrap_task( boost::function< void() > task )
-  {
-    // Run the user supplied task.
-    try
-    {
-      task();
+    if (Aminx > Amaxx || Bminx > Bmaxx) { // Check if parts are empty or invalid
+        result_item.error_message = "Input part(s) have invalid bounds (possibly empty).";
+        return result_item;
     }
-    // Suppress all exceptions.
-    catch ( const std::exception& ) {}
 
-    // Task has finished, so increment count of available threads.
-    boost::unique_lock< boost::mutex > lock( mutex_ );
-    ++available_;
-  }
-};
+    double Cmaxx = Amaxx + Bmaxx;
+    double Cminx = Aminx + Bminx;
+    double Cmaxy = Amaxy + Bmaxy;
+    double Cminy = Aminy + Bminy;
 
-double inputscale;
+    double maxxAbs = std::max(Cmaxx, std::fabs(Cminx));
+    double maxyAbs = std::max(Cmaxy, std::fabs(Cminy));
 
-using namespace boost::polygon;
+    double max_coord_abs = std::max(maxxAbs, maxyAbs);
+    if (max_coord_abs < 1.0) max_coord_abs = 1.0;
 
-class Worker{
-public:
-  Handle<Array> Alist;
-  Handle<Array> B;
-  Local<Array> all_results;
-  Isolate* isolate;
-  
-  void Do(int index){
-  	  
-	  Handle<Array> A = Handle<Array>::Cast(Alist->Get(index));
-  
-	  polygon_set a, b, c;
-	  std::vector<polygon> polys;
-	  std::vector<point> pts;
-  
-	  // get maximum bounds for scaling factor
-	  unsigned int len = A->Length();
-	  double Amaxx = 0;
-	  double Aminx = 0;
-	  double Amaxy = 0;
-	  double Aminy = 0;
-	  for (unsigned int i = 0; i < len; i++) {
-		Local<Object> obj = Local<Object>::Cast(A->Get(i));
-		Amaxx = (std::max)(Amaxx, (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		Aminx = (std::min)(Aminx, (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		Amaxy = (std::max)(Amaxy, (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-		Aminy = (std::min)(Aminy, (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-	  }
-  
-	  len = B->Length();
-	  double Bmaxx = 0;
-	  double Bminx = 0;
-	  double Bmaxy = 0;
-	  double Bminy = 0;
-	  for (unsigned int i = 0; i < len; i++) {
-		Local<Object> obj = Local<Object>::Cast(B->Get(i));
-		Bmaxx = (std::max)(Bmaxx, (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		Bminx = (std::min)(Bminx, (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		Bmaxy = (std::max)(Bmaxy, (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-		Bminy = (std::min)(Bminy, (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-	  }
-  
-	  double Cmaxx = Amaxx + Bmaxx;
-	  double Cminx = Aminx + Bminx;
-	  double Cmaxy = Amaxy + Bmaxy;
-	  double Cminy = Aminy + Bminy;
-  
-	  double maxxAbs = (std::max)(Cmaxx, std::fabs(Cminx));
-	  double maxyAbs = (std::max)(Cmaxy, std::fabs(Cminy));
-  
-	  double maxda = (std::max)(maxxAbs, maxyAbs);
-	  int maxi = std::numeric_limits<int>::max();
-  
-	  if(maxda < 1){
-		maxda = 1;
-	  }
-  
-	  // why 0.1? dunno. it doesn't screw up with 0.1
-	  inputscale = (0.1f * (double)(maxi)) / maxda;
-  
-	  //double scale = 1000;
-	  len = A->Length();
-  
-	  for (unsigned int i = 0; i < len; i++) {
-		Local<Object> obj = Local<Object>::Cast(A->Get(i));
-		int x = (int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		int y = (int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-		
-		pts.push_back(point(x, y));
-	  }
-  
-	  polygon poly;
-	  boost::polygon::set_points(poly, pts.begin(), pts.end());
-	  a+=poly;
-  
-	  // subtract holes from a here...
-	  Handle<Array> holes = Handle<Array>::Cast(A->Get(String::NewFromUtf8(isolate,"children")));
-	  len = holes->Length();
-  
-	  for(unsigned int i=0; i<len; i++){
-		Handle<Array> hole = Handle<Array>::Cast(holes->Get(i));
-		pts.clear();
-		unsigned int hlen = hole->Length();
-		for(unsigned int j=0; j<hlen; j++){
-			Local<Object> obj = Local<Object>::Cast(hole->Get(j));
-			int x = (int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-			int y = (int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-			pts.push_back(point(x, y));
-		}
-		boost::polygon::set_points(poly, pts.begin(), pts.end());
-		a -= poly;
-	  }
-  
-	  //and then load points B
-	  pts.clear();
-	  len = B->Length();
-  
-	  //javascript nfps are referenced with respect to the first point
-	  double xshift = 0;
-	  double yshift = 0;
-  
-	  for (unsigned int i = 0; i < len; i++) {
-		Local<Object> obj = Local<Object>::Cast(B->Get(i));
-		int x = -(int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		int y = -(int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-		pts.push_back(point(x, y));
-	
-		if(i==0){
-			xshift = (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue();
-			yshift = (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue();
-		}
-	  }
-  
-	  boost::polygon::set_points(poly, pts.begin(), pts.end());
-	  b+=poly;
-  
-	  polys.clear();
-  
-	  convolve_two_polygon_sets(c, a, b);
-	  c.get(polys);
-  
-	  Local<Array> result_list = Array::New(isolate);
-  
-	  for(unsigned int i = 0; i < polys.size(); ++i ){
-	  
-		Local<Array> pointlist = Array::New(isolate);
-		int j = 0;
-		
-		for(polygon_traits<polygon>::iterator_type itr = polys[i].begin(); itr != polys[i].end(); ++itr) {
-		   Local<Object> p = Object::New(isolate);
-		 //  std::cout << (double)(*itr).get(boost::polygon::HORIZONTAL) / inputscale << std::endl;
-		   p->Set(String::NewFromUtf8(isolate, "x"), v8::Number::New(isolate, ((double)(*itr).get(boost::polygon::HORIZONTAL)) / inputscale + xshift));
-		   p->Set(String::NewFromUtf8(isolate, "y"), v8::Number::New(isolate, ((double)(*itr).get(boost::polygon::VERTICAL)) / inputscale + yshift));
-	   
-		   pointlist->Set(j, p);
-		   j++;
-		}
-	
-		// holes
-		Local<Array> children = Array::New(isolate);
-		int k = 0;
-		for(polygon_with_holes_traits<polygon>::iterator_holes_type itrh = begin_holes(polys[i]); itrh != end_holes(polys[i]); ++itrh){
-			Local<Array> child = Array::New(isolate);
-			int z = 0;
-			for(polygon_traits<polygon>::iterator_type itr2 = (*itrh).begin(); itr2 != (*itrh).end(); ++itr2) {
-				Local<Object> c = Object::New(isolate);
-				c->Set(String::NewFromUtf8(isolate, "x"), v8::Number::New(isolate, ((double)(*itr2).get(boost::polygon::HORIZONTAL)) / inputscale + xshift));
-				c->Set(String::NewFromUtf8(isolate, "y"), v8::Number::New(isolate, ((double)(*itr2).get(boost::polygon::VERTICAL)) / inputscale + yshift));
-			
-				child->Set(z, c);
-				z++;
-			}
-			children->Set(k, child);
-			k++;
-		}
-	
-		pointlist->Set(String::NewFromUtf8(isolate, "children"), children);
-	
-		result_list->Set(i, pointlist);
-		
-		all_results->Set(index, result_list);
-	  }
-  }
-};
+    double inputscale = (0.1 * static_cast<double>(std::numeric_limits<int>::max())) / max_coord_abs;
+    if (inputscale <= 0) {
+        result_item.error_message = "Calculated inputscale is invalid (<=0).";
+        return result_item;
+    }
 
-NAN_METHOD(calculateNFP) {
-  Isolate* isolate = info.GetIsolate();
 
-  Handle<Object> group = Handle<Object>::Cast(info[0]);
-  Handle<Array> A = Handle<Array>::Cast(group->Get(String::NewFromUtf8(isolate,"A")));
-  Handle<Array> B = Handle<Array>::Cast(group->Get(String::NewFromUtf8(isolate,"B")));
-  
-	  polygon_set a, b, c;
-	  std::vector<polygon> polys;
-	  std::vector<point> pts;
-  
-	  // get maximum bounds for scaling factor
-	  unsigned int len = A->Length();
-	  double Amaxx = 0;
-	  double Aminx = 0;
-	  double Amaxy = 0;
-	  double Aminy = 0;
-	  for (unsigned int i = 0; i < len; i++) {
-		Local<Object> obj = Local<Object>::Cast(A->Get(i));
-		Amaxx = (std::max)(Amaxx, (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		Aminx = (std::min)(Aminx, (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		Amaxy = (std::max)(Amaxy, (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-		Aminy = (std::min)(Aminy, (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-	  }
-  
-	  len = B->Length();
-	  double Bmaxx = 0;
-	  double Bminx = 0;
-	  double Bmaxy = 0;
-	  double Bminy = 0;
-	  for (unsigned int i = 0; i < len; i++) {
-		Local<Object> obj = Local<Object>::Cast(B->Get(i));
-		Bmaxx = (std::max)(Bmaxx, (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		Bminx = (std::min)(Bminx, (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		Bmaxy = (std::max)(Bmaxy, (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-		Bminy = (std::min)(Bminy, (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-	  }
-  
-	  double Cmaxx = Amaxx + Bmaxx;
-	  double Cminx = Aminx + Bminx;
-	  double Cmaxy = Amaxy + Bmaxy;
-	  double Cminy = Aminy + Bminy;
-  
-	  double maxxAbs = (std::max)(Cmaxx, std::fabs(Cminx));
-	  double maxyAbs = (std::max)(Cmaxy, std::fabs(Cminy));
-  
-	  double maxda = (std::max)(maxxAbs, maxyAbs);
-	  int maxi = std::numeric_limits<int>::max();
-  
-	  if(maxda < 1){
-		maxda = 1;
-	  }
-  
-	  // why 0.1? dunno. it doesn't screw up with 0.1
-	  inputscale = (0.1f * (double)(maxi)) / maxda;
-  
-	  //double scale = 1000;
-	  len = A->Length();
-  
-	  for (unsigned int i = 0; i < len; i++) {
-		Local<Object> obj = Local<Object>::Cast(A->Get(i));
-		int x = (int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		int y = (int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-		
-		pts.push_back(point(x, y));
-	  }
-  
-	  polygon poly;
-	  boost::polygon::set_points(poly, pts.begin(), pts.end());
-	  a+=poly;
-  
-	  // subtract holes from a here...
-	  Handle<Array> holes = Handle<Array>::Cast(A->Get(String::NewFromUtf8(isolate,"children")));
-	  len = holes->Length();
-  
-	  for(unsigned int i=0; i<len; i++){
-		Handle<Array> hole = Handle<Array>::Cast(holes->Get(i));
-		pts.clear();
-		unsigned int hlen = hole->Length();
-		for(unsigned int j=0; j<hlen; j++){
-			Local<Object> obj = Local<Object>::Cast(hole->Get(j));
-			int x = (int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-			int y = (int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-			pts.push_back(point(x, y));
-		}
-		boost::polygon::set_points(poly, pts.begin(), pts.end());
-		a -= poly;
-	  }
-  
-	  //and then load points B
-	  pts.clear();
-	  len = B->Length();
-  
-	  //javascript nfps are referenced with respect to the first point
-	  double xshift = 0;
-	  double yshift = 0;
-  
-	  for (unsigned int i = 0; i < len; i++) {
-		Local<Object> obj = Local<Object>::Cast(B->Get(i));
-		int x = -(int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue());
-		int y = -(int)(inputscale * (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue());
-		pts.push_back(point(x, y));
-	
-		if(i==0){
-			xshift = (double)obj->Get(String::NewFromUtf8(isolate,"x"))->NumberValue();
-			yshift = (double)obj->Get(String::NewFromUtf8(isolate,"y"))->NumberValue();
-		}
-	  }
-  
-	  boost::polygon::set_points(poly, pts.begin(), pts.end());
-	  b+=poly;
-  
-	  polys.clear();
-  
-	  convolve_two_polygon_sets(c, a, b);
-	  c.get(polys);
-  
-	  Local<Array> result_list = Array::New(isolate);
-  
-	  for(unsigned int i = 0; i < polys.size(); ++i ){
-	  
-		Local<Array> pointlist = Array::New(isolate);
-		int j = 0;
-		
-		for(polygon_traits<polygon>::iterator_type itr = polys[i].begin(); itr != polys[i].end(); ++itr) {
-		   Local<Object> p = Object::New(isolate);
-		 //  std::cout << (double)(*itr).get(boost::polygon::HORIZONTAL) / inputscale << std::endl;
-		   p->Set(String::NewFromUtf8(isolate, "x"), v8::Number::New(isolate, ((double)(*itr).get(boost::polygon::HORIZONTAL)) / inputscale + xshift));
-		   p->Set(String::NewFromUtf8(isolate, "y"), v8::Number::New(isolate, ((double)(*itr).get(boost::polygon::VERTICAL)) / inputscale + yshift));
-	   
-		   pointlist->Set(j, p);
-		   j++;
-		}
-	
-		// holes
-		Local<Array> children = Array::New(isolate);
-		int k = 0;
-		for(polygon_with_holes_traits<polygon>::iterator_holes_type itrh = begin_holes(polys[i]); itrh != end_holes(polys[i]); ++itrh){
-			Local<Array> child = Array::New(isolate);
-			int z = 0;
-			for(polygon_traits<polygon>::iterator_type itr2 = (*itrh).begin(); itr2 != (*itrh).end(); ++itr2) {
-				Local<Object> c = Object::New(isolate);
-				c->Set(String::NewFromUtf8(isolate, "x"), v8::Number::New(isolate, ((double)(*itr2).get(boost::polygon::HORIZONTAL)) / inputscale + xshift));
-				c->Set(String::NewFromUtf8(isolate, "y"), v8::Number::New(isolate, ((double)(*itr2).get(boost::polygon::VERTICAL)) / inputscale + yshift));
-			
-				child->Set(z, c);
-				z++;
-			}
-			children->Set(k, child);
-			k++;
-		}
-	
-		pointlist->Set(String::NewFromUtf8(isolate, "children"), children);
-	
-		result_list->Set(i, pointlist);
-	}
-  /*Worker worker;
-  worker.Alist = Array::New(isolate);
-  worker.Alist->Set(0, Handle<Array>::Cast(group->Get(String::NewFromUtf8(isolate,"A"))));
-  worker.B = Handle<Array>::Cast(group->Get(String::NewFromUtf8(isolate,"B")));
-  worker.all_results = Array::New(isolate);
-  worker.isolate = isolate;
-  
-  worker.Do(0);
+    // 2. Convert inputs to Boost.Polygon types using `inputscale`
+    BoostPolygonSet boost_set_A, boost_set_B;
+
+    // Part A (orbiting)
+    if (!task.partA.outer.empty()) {
+        std::vector<BoostPoint> outerA_pts = toBoostPoints(task.partA.outer, inputscale);
+        BoostPolygonWithHoles polyA_outer;
+        boost::polygon::set_points(polyA_outer, outerA_pts.begin(), outerA_pts.end());
+        boost_set_A += polyA_outer;
+        for (const auto& hole_path : task.partA.holes) {
+            if (!hole_path.empty()) {
+                std::vector<BoostPoint> holeA_pts = toBoostPoints(hole_path, inputscale);
+                BoostPolygonWithHoles polyA_hole;
+                boost::polygon::set_points(polyA_hole, holeA_pts.begin(), holeA_pts.end());
+                boost_set_A -= polyA_hole;
+            }
+        }
+    }
+
+    // Part B (static), reflected and shifted
+    double xshift = 0, yshift = 0;
+    if (!task.partB.outer.empty()) {
+        xshift = task.partB.outer[0].x;
+        yshift = task.partB.outer[0].y;
+
+        PolygonPath reflected_outerB;
+        reflected_outerB.reserve(task.partB.outer.size());
+        for (const auto& p : task.partB.outer) {
+            reflected_outerB.push_back({-p.x, -p.y});
+        }
+        // Orientation for Boost: If original outer is CCW, reflected becomes CW.
+        // Boost's convolve might expect specific orientations. This detail might need care.
+        // Assuming reflected_outerB is now CW. If Boost expects CCW for the static part in sum, it might need reversal.
+        // However, the original code did not explicitly reverse after reflection for B.
+
+        std::vector<BoostPoint> outerB_pts = toBoostPoints(reflected_outerB, inputscale);
+        BoostPolygonWithHoles polyB_outer;
+        boost::polygon::set_points(polyB_outer, outerB_pts.begin(), outerB_pts.end());
+        boost_set_B += polyB_outer;
+
+        for (const auto& hole_path_orig : task.partB.holes) {
+            if (!hole_path_orig.empty()) {
+                PolygonPath reflected_holeB;
+                reflected_holeB.reserve(hole_path_orig.size());
+                for (const auto& p_hole : hole_path_orig) {
+                    reflected_holeB.push_back({-p_hole.x, -p_hole.y});
+                }
+                std::vector<BoostPoint> holeB_pts = toBoostPoints(reflected_holeB, inputscale);
+                BoostPolygonWithHoles polyB_hole;
+                boost::polygon::set_points(polyB_hole, holeB_pts.begin(), holeB_pts.end());
+                boost_set_B -= polyB_hole;
+            }
+        }
+    }
+
+    if (boost_set_A.empty() || boost_set_B.empty()) {
+        result_item.error_message = "One or both input polygon sets are empty after conversion to Boost types.";
+        // Still mark as success = true if this is not a fatal error for the batch
+        // but indicates no NFP from this pair. Let's treat as non-fatal.
+        result_item.success = true; 
+        return result_item;
+    }
+
+    // 3. NFP Calculation
+    BoostPolygonSet boost_set_C_result;
+    convolve_two_polygon_sets(boost_set_C_result, boost_set_A, boost_set_B);
+
+    // 4. Convert Result
+    std::vector<BoostPolygonWithHoles> result_polys_with_holes;
+    boost_set_C_result.get(result_polys_with_holes);
+
+    for (const auto& poly_wh : result_polys_with_holes) {
+        PolygonPath current_nfp_outer_path = fromBoostPathToPolygonPath(
+            poly_wh.begin(), poly_wh.end(), inputscale, xshift, yshift);
+        
+        if (!current_nfp_outer_path.empty()) {
+            result_item.nfp.push_back(current_nfp_outer_path);
+        }
+        // Note: Original code also extracted holes of the NFP.
+        // Current `NfpResultPolygons` (list of PolygonPath) doesn't store NFP holes.
+        // If NFP holes are needed, `NfpResultPolygons` type and this conversion step must be updated.
+    }
     
-  info.GetReturnValue().Set(Local<Array>::Cast(worker.all_results->Get(0)));*/
-  
-  info.GetReturnValue().Set(result_list);  
+    result_item.success = true; // Assume success if we got this far, even if nfp list is empty
+    return result_item;
 }
 
-NAN_METHOD(calculateNFPBatch) {
-  //std::stringstream buffer;
-  //std::streambuf * old = std::cout.rdbuf(buffer.rdbuf());
-  
-  Isolate* isolate = info.GetIsolate();
 
-  Handle<Object> group = Handle<Object>::Cast(info[0]);
-  
-  Worker worker;
-  worker.Alist = Handle<Array>::Cast(group->Get(String::NewFromUtf8(isolate,"Alist")));
-  worker.B = Handle<Array>::Cast(group->Get(String::NewFromUtf8(isolate,"B")));
-  worker.all_results = Array::New(isolate);
-  worker.isolate = isolate;
-  
-  thread_pool pool( 1 );
-  
-  unsigned int len = worker.Alist->Length();
-  for(unsigned int i = 0; i < len; ++i){
-  	pool.run_task(boost::bind(&Worker::Do, &worker, i)); // Callable object.
-  }
-  
-  //std::string text = buffer.str();
-  pool.join();
-  
-  info.GetReturnValue().Set(worker.all_results);
+bool CalculateNfp_Batch_MultiThreaded(
+    const std::vector<NfpTaskItem>& tasks,
+    std::vector<NfpBatchResultItem>& results,
+    double fixed_scale_for_boost_poly, // This parameter is now IGNORED due to dynamic scaling per task.
+                                       // Kept for API compatibility if strictly needed, but ideally removed.
+    int DANGER_requested_thread_count)
+{
+    if (tasks.empty()) {
+        results.clear();
+        return true;
+    }
+
+    results.resize(tasks.size()); // Pre-size results vector
+
+    int num_threads = DANGER_requested_thread_count;
+    if (num_threads <= 0) {
+        num_threads = boost::thread::hardware_concurrency();
+        if (num_threads == 0) num_threads = 2; // Default to 2 threads if detection fails
+    }
+    
+    thread_pool pool(num_threads);
+
+    for (size_t i = 0; i < tasks.size(); ++i) {
+        // Need to ensure task object and results vector access are managed correctly.
+        // We pass a copy of the task item to the lambda.
+        // The lambda writes to a specific index in 'results'.
+        // This assumes 'results' vector outlives the threads or results are copied before 'results' is destroyed.
+        // And that concurrent writes to different indices of a std::vector are safe (they are).
+        
+        // Create a lambda or bind a function to be executed by the thread pool.
+        // The task for the thread pool needs to capture necessary data by value or ensure lifetime.
+        // The ProcessSingleNfpTask function will be wrapped.
+        
+        // IMPORTANT: The 'tasks' and 'results' vectors must remain valid for the duration of threads.
+        // If CalculateNfp_Batch_MultiThreaded is a blocking call (waits for all threads), this is fine.
+
+        // The task for the thread pool
+        auto task_lambda = [i, &tasks, &results]() {
+            results[i] = ProcessSingleNfpTask(tasks[i]);
+        };
+        pool.run_task(task_lambda);
+    }
+
+    pool.wait_for_completion(); // Wait for all tasks to finish
+
+    return true; // Indicate batch processing was started and completed. Individual success in items.
 }
+
+} // namespace CustomMinkowski

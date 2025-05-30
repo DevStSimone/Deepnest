@@ -2,6 +2,8 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QGraphicsView>
+#include <QGraphicsScene>
 #include "SvgNest.h" // Include the main header from the DeepNestQt library
 
 // Forward declare UI class if using .ui file
@@ -19,9 +21,13 @@ class QProgressBar;    // Already forward declared effectively by usage
 class QTextEdit;       // Already forward declared effectively by usage
 class QFormLayout;
 class QWidget;         // Already forward declared effectively by usage
+class QGraphicsView;
+class QGraphicsScene;
 
+class TestSvgNest; // Forward declaration for friend class
 
 class MainWindow : public QMainWindow {
+    friend class TestSvgNest; // Grant access to test suite
     Q_OBJECT
 
 public:
@@ -57,6 +63,11 @@ private:
    QCheckBox* simplifyOnLoadCheckBox_;
    QFormLayout* configLayout_;
    QWidget* configWidget_; // To hold the configLayout and be target of setEnabled
+
+    // For displaying nesting results graphically
+    QGraphicsView* graphicsView_ = nullptr;
+    QGraphicsScene* graphicsScene_ = nullptr;
+    QHash<QString, QPainterPath> originalParts_;
 
     void setupUi();
     void setupConnections();

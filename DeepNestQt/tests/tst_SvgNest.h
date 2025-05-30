@@ -43,6 +43,10 @@ private slots:
 
     void testNfpCache_data();
     void testNfpCache();
+
+    void testNfpGenerator_BatchOriginalModule();
+    void testNfpGenerator_Clipper_HoledParts(); // Test NFP with holes (Clipper)
+    void testMainWindow_GraphicalDisplay_Basic();  // Basic UI test
     
     // Placeholder for more complex tests
     // void testSimpleNestingRun(); // Integration-like test

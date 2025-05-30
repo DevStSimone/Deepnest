@@ -292,30 +292,54 @@ CandidatePosition NestingEngine::findBestPositionForPart(
     if (!partToPlaceTransformed.isValid() || !targetSheet.isValid()) {
         return {QPointF(-1,-1), -1, 0.0};
     }
+    bool isCustomNfpPath = (config_.placementType == "deepnest");
 
     // For NFP generation, partToPlaceTransformed is already rotated.
     // Sheet and obstacles are assumed to be in their fixed, 0-rotation state on the sheet.
-    QList<QPolygonF> nfpSheet = getNfpInside(partToPlaceTransformed, 0 /*rot for partA is effectively baked in*/, false, 
+    if (isCustomNfpPath) qDebug().noquote() << QString("findBestPositionForPart: Getting NFP for part '%1' (rot %2, ID '%3') INSIDE sheet '%4'")
+                                           .arg(partToPlaceTransformed.id).arg(partRotationVal).arg(partToPlaceTransformed.id).arg(targetSheet.id);
+    QList<QPolygonF> nfpSheet = getNfpInside(partToPlaceTransformed, 0 /*part is already rotated*/, false,
                                              targetSheet, 0, false);
     if (nfpSheet.isEmpty()) {
+        qDebug() << "findBestPositionForPart: nfpSheet is EMPTY for part" << partToPlaceTransformed.id << "on sheet" << targetSheet.id;
         return {QPointF(-1,-1), -1, 0.0};
+    }
+    if (isCustomNfpPath) {
+        for(int i=0; i < nfpSheet.size(); ++i) {
+            qDebug().noquote() << QString("  nfpSheet for '%1' vs sheet '%2': Polygon %3 has %4 vertices.")
+                               .arg(partToPlaceTransformed.id).arg(targetSheet.id).arg(i).arg(nfpSheet[i].size());
+        }
     }
 
     QList<QList<QPolygonF>> nfpObstaclesList;
+    if (isCustomNfpPath) qDebug().noquote() << QString("findBestPositionForPart: Calculating NFPs for part '%1' against %2 static obstacles.")
+                                           .arg(partToPlaceTransformed.id).arg(staticObstacles.size());
     for (const InternalPart& obstacle : staticObstacles) {
         if (stopRequested_) return {QPointF(-1,-1), -1, 0.0};
-        // Obstacle is already placed, so its geometry is static. PartToPlaceTransformed orbits it.
-        // Obstacle rotation is 0 because its geometry is already in sheet coordinates.
-        QList<QPolygonF> nfpObs = getNfp(partToPlaceTransformed, 0 /*baked in*/, false, 
+
+        if (isCustomNfpPath) qDebug().noquote() << QString("  Getting NFP for '%1' (already rotated, ID '%2') orbiting obstacle '%3'")
+                                               .arg(partToPlaceTransformed.id).arg(partToPlaceTransformed.id).arg(obstacle.id);
+        QList<QPolygonF> nfpObs = getNfp(partToPlaceTransformed, 0 /*part is already rotated*/, false,
                                          obstacle, 0, false, 
-                                         false /*partB (obstacle) is static*/);
+                                         false /* partA (transformed) orbits partB (obstacle) */);
         if (!nfpObs.isEmpty()) {
             nfpObstaclesList.append(nfpObs);
+            if (isCustomNfpPath) {
+                for(int i=0; i < nfpObs.size(); ++i) {
+                     qDebug().noquote() << QString("    NFPvsObs '%1': Polygon %2 has %3 vertices.")
+                                       .arg(obstacle.id).arg(i).arg(nfpObs[i].size());
+                }
+            }
+        } else {
+            if (isCustomNfpPath) qDebug().noquote() << QString("    NFPvsObs '%1' is EMPTY.").arg(obstacle.id);
         }
     }
     
+    if (isCustomNfpPath) qDebug().noquote() << QString("findBestPositionForPart: Calling findCandidatePositions for part '%1' (rot %2, ID '%3')")
+                                           .arg(partToPlaceTransformed.id).arg(partRotationVal).arg(partToPlaceTransformed.id);
     QList<CandidatePosition> candidates = findCandidatePositions(partToPlaceTransformed, nfpSheet, nfpObstaclesList);
     if (candidates.isEmpty()) {
+        if (isCustomNfpPath) qDebug() << "findBestPositionForPart: No candidate positions found for part" << partToPlaceTransformed.id;
          return {QPointF(-1,-1), -1, 0.0};
     }
 
@@ -353,22 +377,70 @@ QList<CandidatePosition> NestingEngine::findCandidatePositions(
         return validPositions;
     }
 
-    const QPolygonF& mainPlacementRegion = nfpForPartAndSheet.first();
+    const QPolygonF& mainPlacementRegion = nfpForPartAndSheet.first(); // Assuming nfpForPartAndSheet is never empty if we reach here
+    bool isCustomNfpPath = (config_.placementType == "deepnest");
+
+    if (isCustomNfpPath) {
+        qDebug().noquote() << QString("findCandidatePositions for part '%1': mainPlacementRegion has %2 vertices. Num obstacle NFP sets: %3")
+                           .arg(partToPlaceTransformed.id).arg(mainPlacementRegion.size()).arg(nfPsForPartAndPlacedObstacles.size());
+    }
+
+    int vertex_iteration_count = 0;
+    // Adjust logging frequency based on mainPlacementRegion size to avoid excessive logs
+    int log_frequency = mainPlacementRegion.size() > 5000 ? 1000 : (mainPlacementRegion.size() > 500 ? 100 : (mainPlacementRegion.size() > 50 ? 10 : 1));
+    if (log_frequency <= 0) log_frequency =1;
+
+    const int detailed_log_limit_iterations = 5;
+
     for (const QPointF& potentialPos : mainPlacementRegion) {
+        vertex_iteration_count++;
+        bool log_this_iteration_details = (isCustomNfpPath && vertex_iteration_count <= detailed_log_limit_iterations);
+
+        if (isCustomNfpPath && (vertex_iteration_count % log_frequency == 0 || log_this_iteration_details) ) {
+            qDebug().noquote() << QString("  findCandidatePositions: Checking potentialPos #%1 (%2, %3)")
+                               .arg(vertex_iteration_count).arg(potentialPos.x()).arg(potentialPos.y());
+        }
+
         bool overlapsObstacle = false;
+        int obsSetIdx = 0;
         for (const QList<QPolygonF>& nfpObstacleSet : nfPsForPartAndPlacedObstacles) {
+            if (log_this_iteration_details) {
+                 qDebug().noquote() << QString("    vs. Obstacle NFP Set #%1 (contains %2 polygons)")
+                                   .arg(obsSetIdx).arg(nfpObstacleSet.size());
+            }
+            int obsPolyIdx = 0;
             for (const QPolygonF& nfpObsPoly : nfpObstacleSet) {
-                if (GeometryUtils::isPointInPolygon(potentialPos, nfpObsPoly, Qt::OddEvenFill)) { 
+                if (log_this_iteration_details) {
+                     qDebug().noquote() << QString("      vs. Obstacle NFP Polygon #%1 (has %2 vertices). Sample pt: (%3,%4)")
+                                       .arg(obsPolyIdx)
+                                       .arg(nfpObsPoly.size())
+                                       .arg(nfpObsPoly.isEmpty() ? 0.0 : nfpObsPoly.first().x())
+                                       .arg(nfpObsPoly.isEmpty() ? 0.0 : nfpObsPoly.first().y());
+                }
+                bool isInsideObsNfp = GeometryUtils::isPointInPolygon(potentialPos, nfpObsPoly, Qt::OddEvenFill);
+
+                if (log_this_iteration_details) {
+                     qDebug() << "        isPointInPolygon result:" << (isInsideObsNfp ? "INSIDE (overlap)" : "OUTSIDE (clear)");
+                }
+
+                if (isInsideObsNfp) {
                     overlapsObstacle = true;
                     break;
                 }
+                obsPolyIdx++;
             }
             if (overlapsObstacle) break;
+            obsSetIdx++;
         }
 
         if (!overlapsObstacle) {
             validPositions.append({potentialPos, 0, 0.0}); 
         }
+    }
+
+    if (isCustomNfpPath) {
+        qDebug().noquote() << QString("findCandidatePositions for part '%1': Found %2 valid positions after checking %3 placement points.")
+                           .arg(partToPlaceTransformed.id).arg(validPositions.size()).arg(vertex_iteration_count);
     }
     return validPositions;
 }
@@ -382,6 +454,7 @@ QList<QPolygonF> NestingEngine::getNfp(const InternalPart& partA, double rotatio
     // The key uses original part IDs and gene-defined rotations/flips.
     // Convention for nfpCache_.generateKey: (ID_A, rotA, flipA, ID_B, rotB, flipB, is_A_Static_Flag)
     // Where A is the first part in the key, B is the second.
+    bool useOriginalModule = (config_.placementType == "deepnest");
     // is_A_Static_Flag = true if A is static and B orbits A.
     // is_A_Static_Flag = false if B is static and A orbits B.
 
@@ -392,18 +465,26 @@ QList<QPolygonF> NestingEngine::getNfp(const InternalPart& partA, double rotatio
                                              false); // partA is orbiting, so it's not static.
 
     // Check our temporary batch store first (used if original_module with batching was run)
-    if (batchNfpStore_.contains(cacheKey)) {
-        // qDebug() << "NestingEngine::getNfp: Found in batchNfpStore_ key:" << cacheKey;
-        return convertMinkowskiResultToQPolygonFs(batchNfpStore_.value(cacheKey));
+    if (useOriginalModule && batchNfpStore_.contains(cacheKey)) {
+        qDebug().noquote() << QString("NestingEngine::getNfp: Found in batchNfpStore_ for CustomNFP key: %1 (PartA: %2, PartB: %3, rotA: %4)")
+                           .arg(cacheKey).arg(partA.id).arg(partB.id).arg(rotationA);
+        const auto& minkowskiResult = batchNfpStore_.value(cacheKey);
+        int polyIndex = 0;
+        for (const auto& poly : minkowskiResult) { // This is std::list<PolygonPath>, PolygonPath is std::vector<Point>
+            qDebug().noquote() << QString("  CustomNFP (batch) for %1 rot %2 vs %3 rot %4: Result Polygon %5 has %6 vertices.")
+                               .arg(partA.id).arg(rotationA).arg(partB.id).arg(rotationB).arg(polyIndex).arg(poly.size());
+            polyIndex++;
+        }
+        return convertMinkowskiResultToQPolygonFs(minkowskiResult);
     }
-    
+
     // If not in batch store, proceed with standard cache and NFP generation logic
     Geometry::CachedNfp cachedNfp;
     if (nfpCache_.findNfp(cacheKey, cachedNfp)) {
         return cachedNfp.nfpPolygons;
     }
 
-    InternalPart pA_for_nfp = transformPart(partA, rotationA); 
+    InternalPart pA_for_nfp = transformPart(partA, rotationA);
     InternalPart pB_for_nfp = transformPart(partB, rotationB); // rotationB for static part is usually 0
 
     // The partAIsStaticInKey parameter was confusing and is removed from this simplified path.
@@ -412,8 +493,19 @@ QList<QPolygonF> NestingEngine::getNfp(const InternalPart& partA, double rotatio
          qWarning() << "NestingEngine::getNfp: partAIsStaticInKey=true is deprecated here. Assuming partA orbits partB.";
          // If this case truly needs different NFP (e.g. B orbits A), the caller should swap partA and partB.
     }
-    
-    QList<QPolygonF> nfp = nfpGenerator_.calculateNfp(pA_for_nfp, pB_for_nfp, config_.placementType == "deepnest", false);
+
+    QList<QPolygonF> nfp = nfpGenerator_.calculateNfp(pA_for_nfp, pB_for_nfp, useOriginalModule, false);
+
+    if (useOriginalModule) {
+        qDebug().noquote() << QString("NestingEngine::getNfp: Calculated CustomNFP for %1 rot %2 vs %3 rot %4")
+                           .arg(partA.id).arg(rotationA).arg(partB.id).arg(rotationB);
+        int polyIndex = 0;
+        for (const QPolygonF& poly : nfp) {
+            qDebug().noquote() << QString("  CustomNFP (generated) Polygon %1 has %2 vertices.")
+                               .arg(polyIndex).arg(poly.size());
+            polyIndex++;
+        }
+    }
     
     nfpCache_.storeNfp(cacheKey, Geometry::CachedNfp(nfp));
     return nfp;
@@ -428,14 +520,24 @@ QList<QPolygonF> NestingEngine::getNfpInside(const InternalPart& partA, double r
     // Key for "A fitting inside B (container)": A is dynamic (orbiting), B is the static container.
     // (ID_A, rotA, flipA, ID_B_container, rotB_container, flipB_container, is_A_Static_Flag)
     // is_A_Static_Flag = false, because A is dynamic.
+    bool useOriginalModuleForInside = (config_.placementType == "deepnest"); // Assuming same condition
+
     QString cacheKey = nfpCache_.generateKey(partA.id, rotationA, flippedA,
                                              containerB.id, rotationB, flippedB,
                                              false);
     
-    // Check our temporary batch store first - though getNfpInside might not be batched effectively by current precompute
-    if (batchNfpStore_.contains(cacheKey)) {
-        // qDebug() << "NestingEngine::getNfpInside: Found in batchNfpStore_ key:" << cacheKey;
-        return convertMinkowskiResultToQPolygonFs(batchNfpStore_.value(cacheKey));
+    // Check our temporary batch store first
+    if (useOriginalModuleForInside && batchNfpStore_.contains(cacheKey)) {
+        qDebug().noquote() << QString("NestingEngine::getNfpInside: Found in batchNfpStore_ for CustomNFP key: %1 (PartA: %2, ContainerB: %3, rotA: %4)")
+                           .arg(cacheKey).arg(partA.id).arg(containerB.id).arg(rotationA);
+        const auto& minkowskiResult = batchNfpStore_.value(cacheKey);
+        int polyIndex = 0;
+        for (const auto& poly : minkowskiResult) { // This is std::list<PolygonPath>
+            qDebug().noquote() << QString("  CustomNFP (batch, for inside) for %1 rot %2 vs %3 rot %4: Result Polygon %5 has %6 vertices.")
+                               .arg(partA.id).arg(rotationA).arg(containerB.id).arg(rotationB).arg(polyIndex).arg(poly.size());
+            polyIndex++;
+        }
+        return convertMinkowskiResultToQPolygonFs(minkowskiResult);
     }
 
     Geometry::CachedNfp cachedNfp;
@@ -443,7 +545,18 @@ QList<QPolygonF> NestingEngine::getNfpInside(const InternalPart& partA, double r
         return cachedNfp.nfpPolygons;
     }
     
-    QList<QPolygonF> nfp = nfpGenerator_.calculateNfpInside(pA_for_nfp, pB_container_for_nfp, config_.placementType == "deepnest", false);
+    QList<QPolygonF> nfp = nfpGenerator_.calculateNfpInside(pA_for_nfp, pB_container_for_nfp, useOriginalModuleForInside, false);
+
+    if (useOriginalModuleForInside) {
+        qDebug().noquote() << QString("NestingEngine::getNfpInside: Calculated CustomNFP for %1 rot %2 inside %3 rot %4")
+                           .arg(partA.id).arg(rotationA).arg(containerB.id).arg(rotationB);
+        int polyIndex = 0;
+        for (const QPolygonF& poly : nfp) {
+            qDebug().noquote() << QString("  CustomNFP (generated, for inside) Polygon %1 has %2 vertices.")
+                               .arg(polyIndex).arg(poly.size());
+            polyIndex++;
+        }
+    }
     
     nfpCache_.storeNfp(cacheKey, Geometry::CachedNfp(nfp));
     return nfp;
@@ -451,7 +564,7 @@ QList<QPolygonF> NestingEngine::getNfpInside(const InternalPart& partA, double r
 
 
 void NestingEngine::precomputeNfpsBatchIfNeeded() {
-    bool useBatchOriginalModule = (config_.placementType == "deepnest" && config_.rotations > 0); 
+    bool useBatchOriginalModule = (config_.placementType == "deepnest" && config_.rotations > 0);
     // Using config_.rotations > 0 as a proxy for needing multiple NFPs.
     // A more explicit config like `config_.useOriginalModuleBatch = true` and `config_.nfpThreads > 0` would be better.
 
@@ -482,13 +595,13 @@ void NestingEngine::precomputeNfpsBatchIfNeeded() {
             int numRotationSteps = (config_.rotations == 0) ? 1 : config_.rotations; // if 0, means 0 degrees only once
             for (int rotStep = 0; rotStep < numRotationSteps; ++rotStep) {
                 double rotationA_degrees = (numRotationSteps == 1) ? 0.0 : rotStep * (360.0 / config_.rotations);
-                
+
                 // Generate cache key: partA (orbiting), partB (static). is_A_Static_Flag = false.
                 // Note: p1_base.id, rotationA_degrees, p2_static.id, static_rotation=0, static_flip=false
-                QString key = nfpCache_.generateKey(p1_base.id, rotationA_degrees, false, 
-                                                    p2_static.id, 0, false, 
+                QString key = nfpCache_.generateKey(p1_base.id, rotationA_degrees, false,
+                                                    p2_static.id, 0, false,
                                                     false); // p1_base is orbiting, not static
-                
+
                 if (!uniqueKeys.contains(key)) {
                     InternalPart p1_transformed = transformPart(p1_base, rotationA_degrees);
                     taskDefinitions.append({key, p1_transformed, p2_static});
@@ -499,7 +612,7 @@ void NestingEngine::precomputeNfpsBatchIfNeeded() {
         // TODO: Consider part-vs-sheet NFPs if original_module is used for them.
         // For now, focusing on part-part NFPs as per current originalModuleNfp usage.
     }
-    
+
     if (taskDefinitions.isEmpty()) {
         qDebug() << "NestingEngine: No unique NFP tasks identified for batch precomputation.";
         return;
@@ -520,7 +633,7 @@ void NestingEngine::precomputeNfpsBatchIfNeeded() {
     numThreads = std::max(1, numThreads); // Ensure at least 1 thread
 
     qDebug() << "NestingEngine: Calling generateNfpBatch_OriginalModule for" << batchCallPairs.size() << "pairs, using threads:" << numThreads;
-    QList<CustomMinkowski::NfpResultPolygons> batchRawResults = 
+    QList<CustomMinkowski::NfpResultPolygons> batchRawResults =
         nfpGenerator_.generateNfpBatch_OriginalModule(batchCallPairs, numThreads);
 
     if (batchRawResults.size() != batchCallKeys.size()) {
@@ -531,7 +644,7 @@ void NestingEngine::precomputeNfpsBatchIfNeeded() {
     for (int i = 0; i < batchCallKeys.size(); ++i) {
         const QString& key = batchCallKeys[i];
         const CustomMinkowski::NfpResultPolygons& nfpRes = batchRawResults[i];
-        
+
         // The generateNfpBatch_OriginalModule already logs warnings for individual failed tasks.
         // It returns an empty NfpResultPolygons for failed tasks.
         // So, we store whatever is returned. An empty list can mean a failure or a genuinely empty NFP.

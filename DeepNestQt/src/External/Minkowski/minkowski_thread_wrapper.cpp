@@ -87,7 +87,7 @@ private:
         } catch (...) {
             std::cerr << "Unknown exception in thread task." << std::endl;
         }
-        
+
         boost::unique_lock<boost::mutex> lock(mutex_);
         tasks_in_progress_--;
         if (tasks_in_progress_ == 0) {
@@ -306,7 +306,7 @@ NfpBatchResultItem ProcessSingleNfpTask(const NfpTaskItem& task) {
         result_item.error_message = "One or both input polygon sets are empty after conversion to Boost types.";
         // Still mark as success = true if this is not a fatal error for the batch
         // but indicates no NFP from this pair. Let's treat as non-fatal.
-        result_item.success = true; 
+        result_item.success = true;
         return result_item;
     }
 
@@ -321,7 +321,7 @@ NfpBatchResultItem ProcessSingleNfpTask(const NfpTaskItem& task) {
     for (const auto& poly_wh : result_polys_with_holes) {
         PolygonPath current_nfp_outer_path = fromBoostPathToPolygonPath(
             poly_wh.begin(), poly_wh.end(), inputscale, xshift, yshift);
-        
+
         if (!current_nfp_outer_path.empty()) {
             result_item.nfp.push_back(current_nfp_outer_path);
         }
@@ -354,7 +354,7 @@ bool CalculateNfp_Batch_MultiThreaded(
         num_threads = boost::thread::hardware_concurrency();
         if (num_threads == 0) num_threads = 2; // Default to 2 threads if detection fails
     }
-    
+
     thread_pool pool(num_threads);
 
     for (size_t i = 0; i < tasks.size(); ++i) {
@@ -363,11 +363,11 @@ bool CalculateNfp_Batch_MultiThreaded(
         // The lambda writes to a specific index in 'results'.
         // This assumes 'results' vector outlives the threads or results are copied before 'results' is destroyed.
         // And that concurrent writes to different indices of a std::vector are safe (they are).
-        
+
         // Create a lambda or bind a function to be executed by the thread pool.
         // The task for the thread pool needs to capture necessary data by value or ensure lifetime.
         // The ProcessSingleNfpTask function will be wrapped.
-        
+
         // IMPORTANT: The 'tasks' and 'results' vectors must remain valid for the duration of threads.
         // If CalculateNfp_Batch_MultiThreaded is a blocking call (waits for all threads), this is fine.
 

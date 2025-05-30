@@ -48,11 +48,11 @@ QList<Gene> GeneticAlgorithm::getAllPartGenes() const {
     // NestingWorker ensures that 'availableParts_' is a flat list where each entry is a unique instance
     // (e.g., if Part 'A' has quantity 2, 'availableParts_' will contain two separate InternalPart objects for 'A').
     // Thus, 'sourceIndex' correctly becomes the direct index into the 'availableParts_' list for that specific instance.
-    int currentSourceIndex = 0; 
+    int currentSourceIndex = 0;
     for (const auto& part : availableParts_) {
         // gene.partId stores the original ID (e.g., "PartA")
         // gene.sourceIndex stores the index of this specific instance in the availableParts_ list.
-        allGenes.append(Gene(part.id, currentSourceIndex++)); 
+        allGenes.append(Gene(part.id, currentSourceIndex++));
     }
     return allGenes;
 }

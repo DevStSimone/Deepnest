@@ -319,7 +319,7 @@ void MainWindow::handleNestingFinished(const QList<SvgNest::NestSolution>& allSo
 
            if (graphicsScene_) {
                // Draw the sheet (using the hardcoded one for now)
-               QPainterPath sheetPath; 
+               QPainterPath sheetPath;
                sheetPath.addRect(0, 0, 200, 150); // Matches the one in onStartNestingClicked
                QPen sheetPen(Qt::black);
                sheetPen.setWidth(2); // Make sheet outline a bit thicker
@@ -335,7 +335,7 @@ void MainWindow::handleNestingFinished(const QList<SvgNest::NestSolution>& allSo
 
                    QGraphicsPathItem* item = new QGraphicsPathItem(originalPath);
                    item->setPos(p.position);
-                   item->setRotation(p.rotation); 
+                   item->setRotation(p.rotation);
                    // Note: Rotation is around (0,0) of the item's coordinate system.
                    // If parts are not defined with origin at a sensible rotation center,
                    // this might look off. For simple shapes like rects from (0,0) it's usually fine.

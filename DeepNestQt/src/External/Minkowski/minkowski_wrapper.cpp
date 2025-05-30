@@ -167,7 +167,7 @@ bool CalculateNfp(
 
     double max_coord_abs = std::max(maxxAbs, maxyAbs);
     if (max_coord_abs < 1.0) max_coord_abs = 1.0;
-    
+
     // Defensive check for max_coord_abs being zero or extremely small, which could make inputscale huge or inf
     if (max_coord_abs < 1e-9) { // If max coordinate is essentially zero
       //  std::cerr << "CustomMinkowski::CalculateNfp: Max coordinate value is near zero, cannot determine scale reliably." << std::endl;
@@ -211,7 +211,7 @@ bool CalculateNfp(
         for (const auto& p : partB_static.outer) {
             reflected_outerB.push_back({-p.x, -p.y});
         }
-        
+
         std::vector<BoostPoint> outerB_pts = toBoostPoints(reflected_outerB, inputscale);
         BoostPolygonWithHoles polyB_outer;
         boost::polygon::set_points(polyB_outer, outerB_pts.begin(), outerB_pts.end());
@@ -253,7 +253,7 @@ bool CalculateNfp(
     for(const auto& poly_wh : result_polys_with_holes) {
         PolygonPath current_nfp_outer_path = fromBoostPathToPolygonPath(
             poly_wh.begin(), poly_wh.end(), inputscale, xshift, yshift);
-        
+
         if (!current_nfp_outer_path.empty()) {
             nfp_result.push_back(current_nfp_outer_path);
         }

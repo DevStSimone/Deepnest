@@ -65,7 +65,7 @@ QList<QPolygonF> nfpResultPolygonsToQPolygonFs(const CustomMinkowski::NfpResultP
 // Static helper for NfpGenerator (Custom Minkowski input)
 CustomMinkowski::PolygonWithHoles NfpGenerator::internalPartToMinkowskiPolygon(const Core::InternalPart& internalPart) {
     CustomMinkowski::PolygonWithHoles mPoly;
-    
+
     // Outer boundary
     if (!internalPart.outerBoundary.isEmpty()) {
         mPoly.outer.reserve(internalPart.outerBoundary.size());
@@ -211,7 +211,7 @@ QList<QPolygonF> NfpGenerator::minkowskiNfp(const Core::InternalPart& partA_orbi
         qWarning() << "NfpGenerator::minkowskiNfp: One or both parts resulted in empty PathsD input for Clipper2 (A:" << pathsA.empty() << "ReflectedB:" << pathsReflectedB.empty() << "). Part A ID: " << partA_orbiting.id << " Part B ID: " << partB_static.id;
         return QList<QPolygonF>();
     }
-    
+
     // Clipper2's MinkowskiSum expects (pattern, path) where pattern is typically the smaller/orbiting part.
     // NFP(A orbits B) = A (+) Reflect(B).
     // However, the common definition for NFP where A's reference point traces the boundary is B (+) Reflect(A).
@@ -220,7 +220,7 @@ QList<QPolygonF> NfpGenerator::minkowskiNfp(const Core::InternalPart& partA_orbi
     // The original DeepNest JS uses A (orbiting) + (-B) (reflected static).
     // Let's stick to A_orbiting (+) reflected(B_static)
     // pathsA is pattern, pathsReflectedB is path.
-    Clipper2Lib::PathsD nfpPaths = Clipper2Lib::MinkowskiSum(pathsA, pathsReflectedB, false); 
+    Clipper2Lib::PathsD nfpPaths = Clipper2Lib::MinkowskiSum(pathsA, pathsReflectedB, false);
     // qDebug() << "Clipper2 MinkowskiSum for NFP(A around B) produced" << nfpPaths.size() << "paths for part " << partA_orbiting.id << "around" << partB_static.id;
     return pathsDToQPolygonFs(nfpPaths);
 }
@@ -355,7 +355,7 @@ QList<CustomMinkowski::NfpResultPolygons> NfpGenerator::generateNfpBatch_Origina
     // currently pre-sizes and writes to indices, so order should be maintained.
     // However, if it were to change, sorting is safer. For now, assume order is preserved.
     // std::sort(batchResults.begin(), batchResults.end(), [](const auto&a, const auto&b){ return a.taskId < b.taskId; });
-    
+
     for (const auto& item : batchResults) {
         if (!item.success) {
             qWarning() << "NfpGenerator::generateNfpBatch_OriginalModule: Task ID" << item.taskId << "failed:" << QString::fromStdString(item.error_message);

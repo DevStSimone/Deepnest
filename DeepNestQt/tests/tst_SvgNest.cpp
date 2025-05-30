@@ -201,7 +201,7 @@ void TestSvgNest::testNfpGenerator_Clipper_HoledParts() {
     // Expected: 2 NFP paths. Outer NFP approx 60x60. Inner NFP (for hole) approx 30x30.
     // Note: `calculateNfp` with useOriginalDeepNestModule = false uses Clipper.
     QList<QPolygonF> nfp_S10_around_F50H20 = nfpGen.calculateNfp(partSolidSquare10, partFrameSquare50_Hole20, false, false);
-    
+
     QVERIFY2(nfp_S10_around_F50H20.size() >= 1, "NFP of S10 around F50H20 should produce at least one path (outer).");
     // Depending on Clipper's output for complex cases (like part fitting in hole), it might be one complex path or multiple.
     // For a part fitting in a hole, it often results in two distinct NFP regions.
@@ -223,10 +223,10 @@ void TestSvgNest::testNfpGenerator_Clipper_HoledParts() {
 
         if (std::abs(bounds1.width() - 60.0) < 0.1 && std::abs(bounds1.height() - 60.0) < 0.1) foundOuter = true;
         else if (std::abs(bounds1.width() - 30.0) < 0.1 && std::abs(bounds1.height() - 30.0) < 0.1) foundInner = true;
-        
+
         if (std::abs(bounds2.width() - 60.0) < 0.1 && std::abs(bounds2.height() - 60.0) < 0.1) foundOuter = true;
         else if (std::abs(bounds2.width() - 30.0) < 0.1 && std::abs(bounds2.height() - 30.0) < 0.1) foundInner = true;
-        
+
         QVERIFY2(foundOuter, "Outer NFP bounds not found for S10 around F50H20.");
         QVERIFY2(foundInner, "Inner NFP (hole interaction) bounds not found for S10 around F50H20.");
     }
@@ -272,7 +272,7 @@ void TestSvgNest::testMainWindow_GraphicalDisplay_Basic() {
 
     QList<SvgNest::NestSolution> solutions;
     SvgNest::NestSolution sol;
-    
+
     SvgNest::PlacedPart p1;
     p1.partId = "part1";
     p1.position = QPointF(10,10);
@@ -296,7 +296,7 @@ void TestSvgNest::testMainWindow_GraphicalDisplay_Basic() {
     QVERIFY(mainWindow.graphicsScene_ != nullptr);
     if (mainWindow.graphicsScene_) {
          // The sheet is drawn as a QGraphicsPathItem, and each placed part is another QGraphicsPathItem.
-        QCOMPARE(mainWindow.graphicsScene_->items().count(), 2); 
+        QCOMPARE(mainWindow.graphicsScene_->items().count(), 2);
     }
 }
 
@@ -364,7 +364,7 @@ void TestSvgNest::testNfpGenerator_BatchOriginalModule() {
     s2Poly << QPointF(0,0) << QPointF(30,0) << QPointF(30,30) << QPointF(0,30);
     partS2.outerBoundary = s2Poly;
     partS2.bounds = s2Poly.boundingRect();
-    
+
     // Part T1: Simple triangle
     Core::InternalPart partT1;
     partT1.id = "T1";
@@ -383,7 +383,7 @@ void TestSvgNest::testNfpGenerator_BatchOriginalModule() {
 
 
     int threadCount = 2;
-    QList<CustomMinkowski::NfpResultPolygons> results = 
+    QList<CustomMinkowski::NfpResultPolygons> results =
         nfpGen.generateNfpBatch_OriginalModule(partPairs, threadCount);
 
     QCOMPARE(results.size(), partPairs.size()); // Check if we got results for all pairs
@@ -417,7 +417,7 @@ void TestSvgNest::testNfpGenerator_BatchOriginalModule() {
                 QVERIFY(std::abs(maxY - (30.0)) < 0.001);
                 QVERIFY(std::abs((maxX - minX) - 40.0) < 0.001); // Width
                 QVERIFY(std::abs((maxY - minY) - 40.0) < 0.001); // Height
-                
+
                 // Check number of points. A simple convex NFP of two squares should be a square/rectangle.
                 // Boost.Polygon might return more points on straight lines due to its algorithms.
                 // For a simple square NFP, it should ideally simplify to 4-8 points.

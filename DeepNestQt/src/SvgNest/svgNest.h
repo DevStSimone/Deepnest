@@ -65,6 +65,7 @@ public:
     void startNestingAsync();
     void stopNesting(); // Richiede l'interruzione del processo
 
+    static void registerType();
 signals:
     void nestingProgress(int percentage); // Percentuale di progresso (0-100)
     void newSolutionFound(const SvgNest::NestSolution& solution); // Nuova soluzione trovata dal GA

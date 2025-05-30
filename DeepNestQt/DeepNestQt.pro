@@ -38,11 +38,12 @@ SOURCES += \
     src/Geometry/nfpCache.cpp
 
 # Include paths
-INCLUDEPATH += \
+INCLUDEPATH += ../../boost \
     src/SvgNest \
     src/Core \
     src/Geometry \
-    src/External/Clipper2/Cpp # Main include path for Clipper2 headers
+    src/External/Clipper2/Cpp \ # Main include path for Clipper2 headers
+    src/External/Minkowski
 
 # Clipper2 source files
 # Note: If Clipper2 is header-only for some parts, those .cpp files might not exist or be needed.
@@ -54,6 +55,11 @@ SOURCES += \
     $$CLIPPER2_SRC_DIR/clipper.rectclip.cpp
     # Add clipper.core.cpp here if it exists and is needed for compilation,
     # otherwise, if it's header-only, it's fine.
+
+SOURCES += \
+    src/External/Minkowski/minkowski_wrapper.cpp
+
+    #src/External/Minkowski/minkowski_thread_wrapper.cpp
 
 # Make sure headers from Clipper2Lib are accessible
 INCLUDEPATH += $$CLIPPER2_SRC_DIR

@@ -185,3 +185,9 @@ void SvgNest::handleWorkerProgress(int percentage) {
 void SvgNest::handleWorkerNewSolution(const SvgNest::NestSolution& solution) {
     emit newSolutionFound(solution);
 }
+
+void SvgNest::registerType()
+{
+    qRegisterMetaType<SvgNest::NestSolution>("SvgNest::NestSolution");
+    qRegisterMetaType<QList<SvgNest::NestSolution>>("QList<SvgNest::NestSolution>");
+}

@@ -3,6 +3,7 @@
 
 #include "internalTypes.h" // For Core::InternalPart
 #include "Clipper2/clipper.h"       // From Clipper2 library (clipper.h is the main header)
+#include "minkowski_wrapper.h" // Added for CustomMinkowski
 #include <QList>
 #include <QPolygonF>
 

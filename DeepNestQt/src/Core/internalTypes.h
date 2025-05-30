@@ -67,12 +67,7 @@ struct InternalSheet {
     }
 };
 
-InternalPart::InternalPart(const InternalSheet& part )
-    : outerBoundary(part.outerBoundary), holes(part.holes) {
-    if (!outerBoundary.isEmpty()) {
-        bounds = outerBoundary.boundingRect();
-    }
-}
+
 
 } // namespace Core
 #endif // INTERNALTYPES_H

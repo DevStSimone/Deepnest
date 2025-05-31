@@ -200,6 +200,7 @@ void TestSvgNest::testNfpGenerator_Clipper_HoledParts() {
     // Test Case 1: S10 orbiting F50H20 (A around B)
     // Expected: 2 NFP paths. Outer NFP approx 60x60. Inner NFP (for hole) approx 30x30.
     // Ensure useOriginalDeepNestModule is explicitly false for Clipper2.
+    qDebug() << "TestSvgNest::testNfpGenerator_Clipper_HoledParts: Testing S10 around F50H20 (A around B) using Clipper2.";
     QList<QPolygonF> nfp_S10_around_F50H20 = nfpGen.calculateNfp(partSolidSquare10, partFrameSquare50_Hole20, false /*useOriginalDeepNestModule*/, false /*allowOriginalModuleMultithreading*/);
 
     QVERIFY2(nfp_S10_around_F50H20.size() >= 1, "NFP of S10 around F50H20 should produce at least one path (outer).");
@@ -236,6 +237,7 @@ void TestSvgNest::testNfpGenerator_Clipper_HoledParts() {
     // Expected NFP: Area on the frame material.
     // Frame material is [0,50]x[0,50] excluding [15,35]x[15,35].
     // NFP is B(-)A. Ensure useOriginalDeepNestModule is explicitly false for Clipper2.
+    qDebug() << "TestSvgNest::testNfpGenerator_Clipper_HoledParts: Testing S10 inside F50H20 (A inside B) using Clipper2.";
     QList<QPolygonF> nfp_S10_inside_F50H20 = nfpGen.calculateNfpInside(partSolidSquare10, partFrameSquare50_Hole20, false /*useOriginalDeepNestModule*/, false /*allowOriginalModuleMultithreading*/);
     QVERIFY(!nfp_S10_inside_F50H20.isEmpty());
     if(!nfp_S10_inside_F50H20.isEmpty()){

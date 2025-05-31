@@ -179,65 +179,84 @@ QList<QPolygonF> NfpGenerator::minkowskiNfp(const Core::InternalPart& partA_orbi
     Clipper2Lib::PathD reflected_Ao_path = qPolygonFToPathDReflected(partA_orbiting.outerBoundary);
 
     // 1. Primary NFP from outer boundaries: NFP_primary = MinkowskiSum(B_o, reflect(A_o))
-    Clipper2Lib::PathsD current_nfp_paths = Clipper2Lib::MinkowskiSum(Bo_path, reflected_Ao_path, true, 2);
+    Clipper2Lib::PathsD nfp_primary_pathsD = Clipper2Lib::MinkowskiSum(Bo_path, reflected_Ao_path, true, 2);
+    qDebug() << "NFP_minkowskiNfp[Clipper2]: NFP_primary (B_o + rA_o) path count:" << nfp_primary_pathsD.size()
+             << "for A:" << partA_orbiting.id << "B:" << partB_static.id;
+
+    Clipper2Lib::PathsD nfp_after_A_holes_pathsD = nfp_primary_pathsD;
 
     // 2. Effect of A's Holes (carving out from NFP_primary)
-    // NFP_A_hole_effect_i = MinkowskiSum(B_o, reflect(A_hi))
-    // NFP_after_A_holes = Difference(NFP_primary, Union(all NFP_A_hole_effect_i))
     if (!partA_orbiting.holes.isEmpty()) {
-        Clipper2Lib::PathsD all_A_hole_effects_unioned;
-        Clipper2Lib::ClipperD clipper_union_A_holes_effects(2); // Precision for union
-
+        Clipper2Lib::PathsD union_nfp_a_holes_pathsD;
+        Clipper2Lib::ClipperD clipper_union_A_holes_effects(2);
+        int hole_idx = 0;
         for (const QPolygonF& Ah_qpoly : partA_orbiting.holes) {
-            if (Ah_qpoly.isEmpty()) continue;
+            if (Ah_qpoly.isEmpty()) { hole_idx++; continue; }
             Clipper2Lib::PathD reflected_Ah_path = qPolygonFToPathDReflected(Ah_qpoly);
-            Clipper2Lib::PathsD nfp_A_hole_effect_i = Clipper2Lib::MinkowskiSum(Bo_path, reflected_Ah_path, true, 2);
-            clipper_union_A_holes_effects.AddSubject(nfp_A_hole_effect_i);
+            Clipper2Lib::PathsD nfp_A_hole_effect_i_pathsD = Clipper2Lib::MinkowskiSum(Bo_path, reflected_Ah_path, true, 2);
+            qDebug() << "NFP_minkowskiNfp[Clipper2]: NFP_A_hole_effect_i for A_hole" << hole_idx
+                     << "path count:" << nfp_A_hole_effect_i_pathsD.size();
+            clipper_union_A_holes_effects.AddSubject(nfp_A_hole_effect_i_pathsD);
+            hole_idx++;
         }
 
         if (clipper_union_A_holes_effects.SubjectPathCount() > 0) {
-             clipper_union_A_holes_effects.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, all_A_hole_effects_unioned);
+             clipper_union_A_holes_effects.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, union_nfp_a_holes_pathsD);
         }
+        qDebug() << "NFP_minkowskiNfp[Clipper2]: Union_NFP_A_holes path count:" << union_nfp_a_holes_pathsD.size();
 
-        if (!all_A_hole_effects_unioned.empty() && !current_nfp_paths.empty()) {
+        if (!union_nfp_a_holes_pathsD.empty() && !nfp_after_A_holes_pathsD.empty()) {
             Clipper2Lib::ClipperD clipper_diff_A_holes(2);
-            clipper_diff_A_holes.AddSubject(current_nfp_paths);
-            clipper_diff_A_holes.AddClip(all_A_hole_effects_unioned);
-            clipper_diff_A_holes.Execute(Clipper2Lib::ClipType::Difference, Clipper2Lib::FillRule::Positive, current_nfp_paths);
+            clipper_diff_A_holes.AddSubject(nfp_after_A_holes_pathsD);
+            clipper_diff_A_holes.AddClip(union_nfp_a_holes_pathsD);
+            clipper_diff_A_holes.Execute(Clipper2Lib::ClipType::Difference, Clipper2Lib::FillRule::Positive, nfp_after_A_holes_pathsD);
+        } else if (union_nfp_a_holes_pathsD.empty()) {
+            // No A_hole effects, nfp_after_A_holes_pathsD remains nfp_primary_pathsD
+        } else if (nfp_after_A_holes_pathsD.empty() && !union_nfp_a_holes_pathsD.empty()) {
+             // NFP primary was empty, and A hole effects exist - this is unusual.
+             // Difference would be empty or negative of union_nfp_a_holes. For NFP, likely means empty.
+            nfp_after_A_holes_pathsD.clear();
         }
+        qDebug() << "NFP_minkowskiNfp[Clipper2]: NFP_after_A_holes path count:" << nfp_after_A_holes_pathsD.size();
     }
 
-    // 3. Effect of B's Holes (adding to the NFP)
-    // NFP_B_hole_effect_j = MinkowskiSum(B_hj, reflect(A_o))
-    // NFP_final = Union(NFP_after_A_holes, Union(all NFP_B_hole_effect_j))
-    if (!partB_static.holes.isEmpty()) {
-        Clipper2Lib::PathsD all_B_hole_effects_unioned;
-        Clipper2Lib::ClipperD clipper_union_B_holes_effects(2);
+    Clipper2Lib::PathsD nfp_final_pathsD = nfp_after_A_holes_pathsD;
 
+    // 3. Effect of B's Holes (adding to the NFP)
+    if (!partB_static.holes.isEmpty()) {
+        Clipper2Lib::PathsD union_nfp_b_holes_pathsD;
+        Clipper2Lib::ClipperD clipper_union_B_holes_effects(2);
+        int hole_idx = 0;
         for (const QPolygonF& Bh_qpoly : partB_static.holes) {
-            if (Bh_qpoly.isEmpty()) continue;
+            if (Bh_qpoly.isEmpty()) { hole_idx++; continue; }
             Clipper2Lib::PathD Bh_path = qPolygonFToPathD(Bh_qpoly);
-            Clipper2Lib::PathsD nfp_B_hole_effect_j = Clipper2Lib::MinkowskiSum(Bh_path, reflected_Ao_path, true, 2);
-            clipper_union_B_holes_effects.AddSubject(nfp_B_hole_effect_j);
+            Clipper2Lib::PathsD nfp_B_hole_effect_j_pathsD = Clipper2Lib::MinkowskiSum(Bh_path, reflected_Ao_path, true, 2);
+            qDebug() << "NFP_minkowskiNfp[Clipper2]: NFP_B_hole_effect_j for B_hole" << hole_idx
+                     << "path count:" << nfp_B_hole_effect_j_pathsD.size();
+            clipper_union_B_holes_effects.AddSubject(nfp_B_hole_effect_j_pathsD);
+            hole_idx++;
         }
 
         if (clipper_union_B_holes_effects.SubjectPathCount() > 0) {
-            clipper_union_B_holes_effects.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, all_B_hole_effects_unioned);
+            clipper_union_B_holes_effects.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, union_nfp_b_holes_pathsD);
         }
+        qDebug() << "NFP_minkowskiNfp[Clipper2]: Union_NFP_B_holes path count:" << union_nfp_b_holes_pathsD.size();
 
-        if (!all_B_hole_effects_unioned.empty()) {
-            if (current_nfp_paths.empty()) {
-                 current_nfp_paths = all_B_hole_effects_unioned;
+        if (!union_nfp_b_holes_pathsD.empty()) {
+            if (nfp_final_pathsD.empty()) {
+                 nfp_final_pathsD = union_nfp_b_holes_pathsD; // If previous NFP was empty
             } else {
                 Clipper2Lib::ClipperD clipper_sum_B_holes(2);
-                clipper_sum_B_holes.AddSubject(current_nfp_paths);
-                clipper_sum_B_holes.AddClip(all_B_hole_effects_unioned); // Add as clip for union
-                clipper_sum_B_holes.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, current_nfp_paths);
+                // Add existing NFP as subject, new hole effects as clip, then Union
+                clipper_sum_B_holes.AddSubject(nfp_final_pathsD);
+                clipper_sum_B_holes.AddClip(union_nfp_b_holes_pathsD);
+                clipper_sum_B_holes.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, nfp_final_pathsD);
             }
         }
     }
+    qDebug() << "NFP_minkowskiNfp[Clipper2]: NFP_final path count:" << nfp_final_pathsD.size();
 
-    return pathsDToQPolygonFs(current_nfp_paths);
+    return pathsDToQPolygonFs(nfp_final_pathsD);
 }
 
 QList<QPolygonF> NfpGenerator::minkowskiNfpInside(const Core::InternalPart& partA_fitting, const Core::InternalPart& partB_container) {

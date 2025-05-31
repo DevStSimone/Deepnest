@@ -248,71 +248,70 @@ NfpBatchResultItem ProcessSingleNfpTask(const NfpTaskItem& task) {
 
 
     // 2. Convert inputs to Boost.Polygon types using `inputscale`
-    BoostPolygonSet boost_set_A, boost_set_B;
+    // To compute NFP of A_orbiting (task.partA) around B_static (task.partB),
+    // the formula is B_static (+) reflect(A_orbiting).
+    // The final result is then shifted by B_static's reference point (task.partB.outer[0]).
 
-    // Part A (orbiting)
-    if (!task.partA.outer.empty()) {
-        std::vector<BoostPoint> outerA_pts = toBoostPoints(task.partA.outer, inputscale);
-        BoostPolygonWithHoles polyA_outer;
-        boost::polygon::set_points(polyA_outer, outerA_pts.begin(), outerA_pts.end());
-        boost_set_A += polyA_outer;
-        for (const auto& hole_path : task.partA.holes) {
-            if (!hole_path.empty()) {
-                std::vector<BoostPoint> holeA_pts = toBoostPoints(hole_path, inputscale);
-                BoostPolygonWithHoles polyA_hole;
-                boost::polygon::set_points(polyA_hole, holeA_pts.begin(), holeA_pts.end());
-                boost_set_A -= polyA_hole;
-            }
-        }
-    }
+    BoostPolygonSet boost_set_static_partB, boost_set_reflected_orbiting_partA;
+    double xshift = 0, yshift = 0; // These shifts are from the static part (task.partB)
 
-    // Part B (static), reflected and shifted
-    double xshift = 0, yshift = 0;
+    // Prepare Static Part B (task.partB) - this will be the first operand for convolve_two_polygon_sets
     if (!task.partB.outer.empty()) {
-        xshift = task.partB.outer[0].x;
+        xshift = task.partB.outer[0].x; // Capture shift from original first point of static B
         yshift = task.partB.outer[0].y;
 
-        PolygonPath reflected_outerB;
-        reflected_outerB.reserve(task.partB.outer.size());
-        for (const auto& p : task.partB.outer) {
-            reflected_outerB.push_back({-p.x, -p.y});
-        }
-        // Orientation for Boost: If original outer is CCW, reflected becomes CW.
-        // Boost's convolve might expect specific orientations. This detail might need care.
-        // Assuming reflected_outerB is now CW. If Boost expects CCW for the static part in sum, it might need reversal.
-        // However, the original code did not explicitly reverse after reflection for B.
-
-        std::vector<BoostPoint> outerB_pts = toBoostPoints(reflected_outerB, inputscale);
+        std::vector<BoostPoint> outerB_pts = toBoostPoints(task.partB.outer, inputscale);
         BoostPolygonWithHoles polyB_outer;
         boost::polygon::set_points(polyB_outer, outerB_pts.begin(), outerB_pts.end());
-        boost_set_B += polyB_outer;
+        boost_set_static_partB += polyB_outer;
 
-        for (const auto& hole_path_orig : task.partB.holes) {
-            if (!hole_path_orig.empty()) {
-                PolygonPath reflected_holeB;
-                reflected_holeB.reserve(hole_path_orig.size());
-                for (const auto& p_hole : hole_path_orig) {
-                    reflected_holeB.push_back({-p_hole.x, -p_hole.y});
-                }
-                std::vector<BoostPoint> holeB_pts = toBoostPoints(reflected_holeB, inputscale);
+        for (const auto& hole_path : task.partB.holes) {
+            if (!hole_path.empty()) {
+                std::vector<BoostPoint> holeB_pts = toBoostPoints(hole_path, inputscale);
                 BoostPolygonWithHoles polyB_hole;
                 boost::polygon::set_points(polyB_hole, holeB_pts.begin(), holeB_pts.end());
-                boost_set_B -= polyB_hole;
+                boost_set_static_partB -= polyB_hole; // Subtract holes
             }
         }
     }
 
-    if (boost_set_A.empty() || boost_set_B.empty()) {
-        result_item.error_message = "One or both input polygon sets are empty after conversion to Boost types.";
-        // Still mark as success = true if this is not a fatal error for the batch
-        // but indicates no NFP from this pair. Let's treat as non-fatal.
-        result_item.success = true;
+    // Prepare Orbiting Part A (task.partA) - this will be reflected and become the second operand
+    if (!task.partA.outer.empty()) {
+        PolygonPath reflected_outerA;
+        reflected_outerA.reserve(task.partA.outer.size());
+        // Reflect A about its own reference point (assumed to be (0,0) in its local coordinates for reflection)
+        for (const auto& p : task.partA.outer) {
+            reflected_outerA.push_back({-p.x, -p.y});
+        }
+        std::vector<BoostPoint> outerA_refl_pts = toBoostPoints(reflected_outerA, inputscale);
+        BoostPolygonWithHoles polyA_outer_refl;
+        boost::polygon::set_points(polyA_outer_refl, outerA_refl_pts.begin(), outerA_refl_pts.end());
+        boost_set_reflected_orbiting_partA += polyA_outer_refl;
+
+        for (const auto& hole_path_orig : task.partA.holes) {
+            if (!hole_path_orig.empty()) {
+                PolygonPath reflected_holeA;
+                reflected_holeA.reserve(hole_path_orig.size());
+                for (const auto& p_hole : hole_path_orig) {
+                     reflected_holeA.push_back({-p_hole.x, -p_hole.y});
+                }
+                std::vector<BoostPoint> holeA_refl_pts = toBoostPoints(reflected_holeA, inputscale);
+                BoostPolygonWithHoles polyA_hole_refl;
+                boost::polygon::set_points(polyA_hole_refl, holeA_refl_pts.begin(), holeA_refl_pts.end());
+                boost_set_reflected_orbiting_partA -= polyA_hole_refl;
+            }
+        }
+    }
+
+    if (boost_set_static_partB.empty() || boost_set_reflected_orbiting_partA.empty()) {
+        result_item.error_message = "One or both input polygon sets are empty after conversion to Boost types for NFP calculation.";
+        result_item.success = true; // Not a fatal error for batch, but this pair yields no NFP.
         return result_item;
     }
 
-    // 3. NFP Calculation
+    // 3. NFP Calculation: Static B (+) Reflected Orbiting A
     BoostPolygonSet boost_set_C_result;
-    convolve_two_polygon_sets(boost_set_C_result, boost_set_A, boost_set_B);
+    convolve_two_polygon_sets(boost_set_C_result, boost_set_static_partB, boost_set_reflected_orbiting_partA);
 
     // 4. Convert Result
     std::vector<BoostPolygonWithHoles> result_polys_with_holes;

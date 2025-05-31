@@ -88,62 +88,29 @@ CustomMinkowski::PolygonWithHoles NfpGenerator::internalPartToMinkowskiPolygon(c
     return mPoly;
 }
 
-// New static helper for converting InternalPart to Clipper2Lib::PathsD, with optional reflection
-static Clipper2Lib::PathsD internalPartToClipperPathsD(const Core::InternalPart& part, bool reflect) {
-    Clipper2Lib::PathsD allPaths;
-
-    // Process outer boundary
-    if (!part.outerBoundary.isEmpty()) {
-        Clipper2Lib::PathD outerPath;
-        for (const QPointF& pt : part.outerBoundary) {
-            outerPath.push_back(Clipper2Lib::PointD(reflect ? -pt.x() : pt.x(), reflect ? -pt.y() : pt.y()));
-        }
-        if (reflect && !outerPath.empty()) { // Reflection reverses orientation
-            std::reverse(outerPath.begin(), outerPath.end());
-        }
-        allPaths.push_back(outerPath);
-    }
-
-    // Process holes
-    for (const QPolygonF& holeQPoly : part.holes) {
-        if (!holeQPoly.isEmpty()) {
-            Clipper2Lib::PathD holePath;
-            for (const QPointF& pt : holeQPoly) {
-                holePath.push_back(Clipper2Lib::PointD(reflect ? -pt.x() : pt.x(), reflect ? -pt.y() : pt.y()));
-            }
-            if (reflect && !holePath.empty()) { // Reflection reverses orientation
-                std::reverse(holePath.begin(), holePath.end());
-            }
-            allPaths.push_back(holePath);
-        }
-    }
-    return allPaths;
-}
-
-
+// Helper to convert QPolygonF to Clipper2Lib::PathD (no reflection)
 Clipper2Lib::PathD NfpGenerator::qPolygonFToPathD(const QPolygonF& polygon) const {
     Clipper2Lib::PathD path;
+    path.reserve(polygon.size());
     for (const QPointF& pt : polygon) {
-        // For Clipper2, we use its own scaling mechanism if needed, or pass doubles directly.
-        // Assuming NfpGenerator's scale_ is for integer-based operations like Boost.Polygon might use.
-        // Clipper2Lib::PointD typically takes doubles.
         path.push_back(Clipper2Lib::PointD(pt.x(), pt.y()));
     }
-
     return path;
 }
 
-Clipper2Lib::PathsD NfpGenerator::qPolygonFToPathsD(const QPolygonF& polygon) const {
-    // This function seems to return PathsD (plural) but is named qPolygonFToPathD (singular PathD).
-    // It also creates an unnecessary outer PathsD for a single PathD.
-    // Let's assume it should just return PathD.
+// Helper to convert QPolygonF to Clipper2Lib::PathD AND reflect
+static Clipper2Lib::PathD qPolygonFToPathDReflected(const QPolygonF& polygon) {
     Clipper2Lib::PathD path;
-    for (const QPointF& pt : polygon) {
-        path.push_back(Clipper2Lib::PointD(pt.x(), pt.y()));
+    path.reserve(polygon.size());
+    // Iterate in reverse for reflection to help maintain winding sense, though Clipper handles it
+    for (int i = polygon.size() - 1; i >= 0; --i) {
+        const QPointF& pt = polygon.at(i);
+        path.push_back(Clipper2Lib::PointD(-pt.x(), -pt.y()));
     }
     return path;
 }
 
+// qPolygonFsToPathsD remains useful for collections if needed elsewhere.
 Clipper2Lib::PathsD NfpGenerator::qPolygonFsToPathsD(const QList<QPolygonF>& polygons) const {
     Clipper2Lib::PathsD allPaths;
     for(const QPolygonF& polygon : polygons) {
@@ -202,46 +169,97 @@ QList<QPolygonF> NfpGenerator::minkowskiNfp(const Core::InternalPart& partA_orbi
         return QList<QPolygonF>();
     }
     
-    Clipper2Lib::PathD pathsB_outer = qPolygonFToPathD(partB_static.outerBoundary);
-    // Convert partA (orbiting) and reflected partB (static, reflected) to PathsD, including holes.
-    Clipper2Lib::PathsD pathsA = internalPartToClipperPathsD(partA_orbiting, false);
-    Clipper2Lib::PathsD pathsReflectedB = internalPartToClipperPathsD(partB_static, true);
-
-    if (pathsA.empty() || pathsReflectedB.empty()) {
-        qWarning() << "NfpGenerator::minkowskiNfp: One or both parts resulted in empty PathsD input for Clipper2 (A:" << pathsA.empty() << "ReflectedB:" << pathsReflectedB.empty() << "). Part A ID: " << partA_orbiting.id << " Part B ID: " << partB_static.id;
+    if (!partA_orbiting.isValid() || !partB_static.isValid() || partA_orbiting.outerBoundary.isEmpty() || partB_static.outerBoundary.isEmpty()) {
+        qWarning() << "NfpGenerator::minkowskiNfp: Invalid or empty outer boundary for input parts. Part A ID:" << partA_orbiting.id << "Part B ID:" << partB_static.id;
         return QList<QPolygonF>();
     }
 
-    // Clipper2's MinkowskiSum expects (pattern, path) where pattern is typically the smaller/orbiting part.
-    // NFP(A orbits B) = A (+) Reflect(B).
-    // However, the common definition for NFP where A's reference point traces the boundary is B (+) Reflect(A).
-    // Let's use the latter: Static Part B (+) Reflected Orbiting Part A.
-    // So, pathsB will be `pattern` and pathsReflectedA will be `path`.
-    // The original DeepNest JS uses A (orbiting) + (-B) (reflected static).
-    // Let's stick to A_orbiting (+) reflected(B_static)
-    // pathsA is pattern, pathsReflectedB is path.
-    Clipper2Lib::PathsD nfpPaths = Clipper2Lib::MinkowskiSum(pathsA, pathsReflectedB, false);
-    // qDebug() << "Clipper2 MinkowskiSum for NFP(A around B) produced" << nfpPaths.size() << "paths for part " << partA_orbiting.id << "around" << partB_static.id;
-    return pathsDToQPolygonFs(nfpPaths);
+    // NFP of A orbiting B = B_static (+) reflect(A_orbiting)
+    Clipper2Lib::PathD Bo_path = qPolygonFToPathD(partB_static.outerBoundary);
+    Clipper2Lib::PathD reflected_Ao_path = qPolygonFToPathDReflected(partA_orbiting.outerBoundary);
+
+    // 1. Primary NFP from outer boundaries: NFP_primary = MinkowskiSum(B_o, reflect(A_o))
+    Clipper2Lib::PathsD current_nfp_paths = Clipper2Lib::MinkowskiSum(Bo_path, reflected_Ao_path, true, 2);
+
+    // 2. Effect of A's Holes (carving out from NFP_primary)
+    // NFP_A_hole_effect_i = MinkowskiSum(B_o, reflect(A_hi))
+    // NFP_after_A_holes = Difference(NFP_primary, Union(all NFP_A_hole_effect_i))
+    if (!partA_orbiting.holes.isEmpty()) {
+        Clipper2Lib::PathsD all_A_hole_effects_unioned;
+        Clipper2Lib::ClipperD clipper_union_A_holes_effects(2); // Precision for union
+
+        for (const QPolygonF& Ah_qpoly : partA_orbiting.holes) {
+            if (Ah_qpoly.isEmpty()) continue;
+            Clipper2Lib::PathD reflected_Ah_path = qPolygonFToPathDReflected(Ah_qpoly);
+            Clipper2Lib::PathsD nfp_A_hole_effect_i = Clipper2Lib::MinkowskiSum(Bo_path, reflected_Ah_path, true, 2);
+            clipper_union_A_holes_effects.AddSubject(nfp_A_hole_effect_i);
+        }
+
+        if (clipper_union_A_holes_effects.SubjectPathCount() > 0) {
+             clipper_union_A_holes_effects.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, all_A_hole_effects_unioned);
+        }
+
+        if (!all_A_hole_effects_unioned.empty() && !current_nfp_paths.empty()) {
+            Clipper2Lib::ClipperD clipper_diff_A_holes(2);
+            clipper_diff_A_holes.AddSubject(current_nfp_paths);
+            clipper_diff_A_holes.AddClip(all_A_hole_effects_unioned);
+            clipper_diff_A_holes.Execute(Clipper2Lib::ClipType::Difference, Clipper2Lib::FillRule::Positive, current_nfp_paths);
+        }
+    }
+
+    // 3. Effect of B's Holes (adding to the NFP)
+    // NFP_B_hole_effect_j = MinkowskiSum(B_hj, reflect(A_o))
+    // NFP_final = Union(NFP_after_A_holes, Union(all NFP_B_hole_effect_j))
+    if (!partB_static.holes.isEmpty()) {
+        Clipper2Lib::PathsD all_B_hole_effects_unioned;
+        Clipper2Lib::ClipperD clipper_union_B_holes_effects(2);
+
+        for (const QPolygonF& Bh_qpoly : partB_static.holes) {
+            if (Bh_qpoly.isEmpty()) continue;
+            Clipper2Lib::PathD Bh_path = qPolygonFToPathD(Bh_qpoly);
+            Clipper2Lib::PathsD nfp_B_hole_effect_j = Clipper2Lib::MinkowskiSum(Bh_path, reflected_Ao_path, true, 2);
+            clipper_union_B_holes_effects.AddSubject(nfp_B_hole_effect_j);
+        }
+
+        if (clipper_union_B_holes_effects.SubjectPathCount() > 0) {
+            clipper_union_B_holes_effects.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, all_B_hole_effects_unioned);
+        }
+
+        if (!all_B_hole_effects_unioned.empty()) {
+            if (current_nfp_paths.empty()) {
+                 current_nfp_paths = all_B_hole_effects_unioned;
+            } else {
+                Clipper2Lib::ClipperD clipper_sum_B_holes(2);
+                clipper_sum_B_holes.AddSubject(current_nfp_paths);
+                clipper_sum_B_holes.AddClip(all_B_hole_effects_unioned); // Add as clip for union
+                clipper_sum_B_holes.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::Positive, current_nfp_paths);
+            }
+        }
+    }
+
+    return pathsDToQPolygonFs(current_nfp_paths);
 }
 
 QList<QPolygonF> NfpGenerator::minkowskiNfpInside(const Core::InternalPart& partA_fitting, const Core::InternalPart& partB_container) {
-    if (!partA_fitting.isValid() || !partB_container.isValid()) {
-        qWarning() << "NfpGenerator::minkowskiNfpInside: Invalid input parts.";
+    // Full hole handling for "NFP Inside" is complex:
+    // Outer NFP: B_outer (-) A_outer
+    // For each hole H_b in B: NFP_H_b = H_b (+) reflect(A_outer) (area where A must be if its ref point is in H_b to avoid collision with H_b edge)
+    // For each hole H_a in A: NFP_H_a = B_outer (-) H_a (area where A's ref point can be so H_a is inside B_outer)
+    // Final = OuterNFP intersected with all NFP_H_a, and then unioned/differenced with NFP_H_b aspects.
+    // This simplified version only handles outer boundaries.
+    qWarning() << "NfpGenerator::minkowskiNfpInside (Clipper2) is using a simplified version (outer boundaries only) and does not fully support holes for 'inside' NFP context.";
+
+    if (!partA_fitting.isValid() || !partB_container.isValid() || partA_fitting.outerBoundary.isEmpty() || partB_container.outerBoundary.isEmpty()) {
+        qWarning() << "NfpGenerator::minkowskiNfpInside: Invalid or empty outer boundary for input parts. Part A ID:" << partA_fitting.id << "Part B ID:" << partB_container.id;
         return QList<QPolygonF>();
     }
     
-    Clipper2Lib::PathsD pathsA = internalPartToClipperPathsD(partA_fitting, false);
-    Clipper2Lib::PathsD pathsB = internalPartToClipperPathsD(partB_container, false);
+    Clipper2Lib::PathD pathA_outer = qPolygonFToPathD(partA_fitting.outerBoundary);
+    Clipper2Lib::PathD pathB_outer = qPolygonFToPathD(partB_container.outerBoundary);
 
-    if (pathsA.empty() || pathsB.empty()) {
-        qWarning() << "NfpGenerator::minkowskiNfpInside: One or both parts resulted in empty PathsD input for Clipper2 (A:" << pathsA.empty() << "B:" << pathsB.empty() << "). Part A ID: " << partA_fitting.id << " Part B ID: " << partB_container.id;
-        return QList<QPolygonF>();
-    }
-
-    // NFP_inside(A fits in B) = B (-) A (Minkowski Difference)
-    Clipper2Lib::PathsD nfpPaths = Clipper2Lib::MinkowskiDiff(pathsB, pathsA, false);
-    // qDebug() << "Clipper2 MinkowskiDiff for NFP(A inside B) produced" << nfpPaths.size() << "paths for part " << partA_fitting.id << "inside" << partB_container.id;
+    // NFP_inside(A fits in B) = B_outer (-) A_outer (Minkowski Difference)
+    Clipper2Lib::PathsD nfpPaths = Clipper2Lib::MinkowskiDiff(pathB_outer, pathA_outer, true, 2); // isClosed=true, decimalPlaces=2
+    // qDebug() << "Clipper2 MinkowskiDiff for NFP(A inside B) produced" << nfpPaths.size() << "paths for part " << partA_fitting.id << "inside" << partB_container.id; // Debug
     return pathsDToQPolygonFs(nfpPaths);
 }
 

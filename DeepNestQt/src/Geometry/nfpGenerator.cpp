@@ -4,6 +4,32 @@
 #include <QDebug>
 #include <algorithm> 
 
+namespace { // Anonymous namespace for static helper functions
+
+static Clipper2Lib::PathD GetLargestAreaPathFromPathsD(const Clipper2Lib::PathsD& paths) {
+    if (paths.empty()) {
+        return Clipper2Lib::PathD();
+    }
+    if (paths.size() == 1) {
+        return paths[0];
+    }
+
+    double max_abs_area = 0.0;
+    const Clipper2Lib::PathD* largest_path = nullptr;
+
+    for (const Clipper2Lib::PathD& path : paths) {
+        double area = Clipper2Lib::Area(path); // Area can be negative based on winding
+        double abs_area = std::abs(area);
+        if (largest_path == nullptr || abs_area > max_abs_area) {
+            max_abs_area = abs_area;
+            largest_path = &path;
+        }
+    }
+    return largest_path ? *largest_path : Clipper2Lib::PathD();
+}
+
+} // end anonymous namespace
+
 namespace Geometry {
 
 NfpGenerator::NfpGenerator(double clipperScale) : scale_(clipperScale) {

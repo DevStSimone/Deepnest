@@ -179,6 +179,15 @@ QList<QPolygonF> NfpGenerator::minkowskiNfp(const Core::InternalPart& partA_orbi
     Clipper2Lib::PathD reflected_Ao_path = qPolygonFToPathDReflected(partA_orbiting.outerBoundary);
 
     // 1. Primary NFP from outer boundaries: NFP_primary = MinkowskiSum(B_o, reflect(A_o))
+    qDebug() << "NFP_minkowskiNfp[Clipper2]: Input B_o_pathD for NFP_primary (Part ID:" << partB_static.id << "):";
+    for(const auto& pt : Bo_path) {
+        qDebug() << "  Vertex:" << pt.x << "," << pt.y;
+    }
+    qDebug() << "NFP_minkowskiNfp[Clipper2]: Input reflected_A_o_pathD for NFP_primary (Part ID:" << partA_orbiting.id << "):";
+    for(const auto& pt : reflected_Ao_path) {
+        qDebug() << "  Vertex:" << pt.x << "," << pt.y;
+    }
+
     Clipper2Lib::PathsD nfp_primary_pathsD = Clipper2Lib::MinkowskiSum(Bo_path, reflected_Ao_path, true, 2);
     qDebug() << "NFP_minkowskiNfp[Clipper2]: NFP_primary (B_o + rA_o) path count:" << nfp_primary_pathsD.size()
              << "for A:" << partA_orbiting.id << "B:" << partB_static.id;

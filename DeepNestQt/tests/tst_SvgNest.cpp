@@ -177,6 +177,62 @@ void TestSvgNest::testNfpGenerator_Clipper_HoledParts() {
     SvgNest::Configuration config; // Default config
     Geometry::NfpGenerator nfpGen(config.clipperScale); // Clipper scale not directly used by PathsD NFP
 
+    // --- Begin Diagnostic Snippet for MinkowskiSum ---
+    qDebug() << "NFP_minkowskiNfp[Clipper2_DirectTest]: Testing Clipper2Lib::MinkowskiSum directly.";
+
+    Clipper2Lib::PathD squareA_diag; // A 10x10 square at origin
+    squareA_diag.push_back(Clipper2Lib::PointD(0,0));
+    squareA_diag.push_back(Clipper2Lib::PointD(10,0));
+    squareA_diag.push_back(Clipper2Lib::PointD(10,10));
+    squareA_diag.push_back(Clipper2Lib::PointD(0,10));
+
+    Clipper2Lib::PathD squareB_diag; // A 50x50 square at origin
+    squareB_diag.push_back(Clipper2Lib::PointD(0,0));
+    squareB_diag.push_back(Clipper2Lib::PointD(50,0));
+    squareB_diag.push_back(Clipper2Lib::PointD(50,50));
+    squareB_diag.push_back(Clipper2Lib::PointD(0,50));
+
+    qDebug() << "NFP_minkowskiNfp[Clipper2_DirectTest]: squareA_diag (10x10) vertices:" << squareA_diag.size();
+    for(const auto& pt : squareA_diag) { qDebug() << "  A_diag_Vert:" << pt.x << "," << pt.y; }
+    qDebug() << "NFP_minkowskiNfp[Clipper2_DirectTest]: squareB_diag (50x50) vertices:" << squareB_diag.size();
+    for(const auto& pt : squareB_diag) { qDebug() << "  B_diag_Vert:" << pt.x << "," << pt.y; }
+
+    Clipper2Lib::PathsD sum_result1 = Clipper2Lib::MinkowskiSum(squareA_diag, squareB_diag, true, 2);
+    qDebug() << "NFP_minkowskiNfp[Clipper2_DirectTest]: MinkowskiSum(squareA_diag, squareB_diag) path count:" << sum_result1.size();
+    if (!sum_result1.empty()) {
+        for (size_t i = 0; i < sum_result1.size(); ++i) {
+            qDebug() << "  Result1 Path" << i << "vertex count:" << sum_result1[i].size();
+        }
+    }
+
+    Clipper2Lib::PathD reflected_squareA_diag;
+    // Path for a 10x10 square reflected around origin: (0,0),(-10,0),(-10,-10),(0,-10)
+    // In CCW order for outer path (which reflection would make it if original was CCW and we traverse points)
+    // (0,0) -> (0,0)
+    // (0,10) -> (0,-10)
+    // (10,10) -> (-10,-10)
+    // (10,0) -> (-10,0)
+    // So, (0,0), (0,-10), (-10,-10), (-10,0)
+    reflected_squareA_diag.push_back(Clipper2Lib::PointD(0,0));
+    reflected_squareA_diag.push_back(Clipper2Lib::PointD(0,-10));
+    reflected_squareA_diag.push_back(Clipper2Lib::PointD(-10,-10));
+    reflected_squareA_diag.push_back(Clipper2Lib::PointD(-10,0));
+    // std::reverse(reflected_squareA_diag.begin(), reflected_squareA_diag.end()); // Not needed if points are defined CCW for outer
+
+    qDebug() << "NFP_minkowskiNfp[Clipper2_DirectTest]: reflected_squareA_diag (vertices for -10x-10 box based at 0,0):" << reflected_squareA_diag.size();
+    for(const auto& pt : reflected_squareA_diag) { qDebug() << "  refA_diag_Vert:" << pt.x << "," << pt.y; }
+
+    Clipper2Lib::PathsD sum_result2 = Clipper2Lib::MinkowskiSum(squareB_diag, reflected_squareA_diag, true, 2); // B + reflect(A)
+    qDebug() << "NFP_minkowskiNfp[Clipper2_DirectTest]: MinkowskiSum(squareB_diag, reflected_squareA_diag) path count:" << sum_result2.size();
+    if (!sum_result2.empty()) {
+        for (size_t i = 0; i < sum_result2.size(); ++i) {
+            qDebug() << "  Result2 Path" << i << "vertex count:" << sum_result2[i].size();
+            // Optional: print vertices of sum_result2 paths
+            // for(const auto& pt : sum_result2[i]) { qDebug() << "    Vertex:" << pt.x << "," << pt.y; }
+        }
+    }
+    // --- End Diagnostic Snippet ---
+
     // Part S10: Solid 10x10 square
     Core::InternalPart partSolidSquare10;
     partSolidSquare10.id = "S10";
